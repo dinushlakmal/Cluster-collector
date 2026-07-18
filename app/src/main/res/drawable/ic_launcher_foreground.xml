@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Bold Drop Shadow under the pin -->
+    <path
+        android:fillColor="#22000000"
+        android:pathData="M54,23 C44,23 35,32 35,43.5 C35,58.6 54,89 54,89 C54,89 73,58.6 73,43.5 C73,32 64,23 54,23 Z" />
+
+    <!-- Main Pin body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20 C43,20 34,29 34,40.5 C34,55.6 54,86 54,86 C54,86 74,55.6 74,40.5 C74,29 65,20 54,20 Z" />
+
+    <!-- Location Dot / Core Cutout inside the pin (Teal / Secondary color representation) -->
+    <path
+        android:fillColor="#0D9488"
+        android:pathData="M54,32 C58.4,32 62,35.6 62,40 C62,44.4 58.4,48 54,48 C49.6,48 46,44.4 46,40 C46,35.6 49.6,32 54,32 Z" />
+
+    <!-- A small elegant navigation arrow shape inside the dot -->
+    <path
+        android:fillColor="#2DD4BF"
+        android:pathData="M54,36 L57,43 L54,41.5 L51,43 Z" />
+
+</vector>
