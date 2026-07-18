@@ -100,6 +100,8 @@ class MainActivity : ComponentActivity() {
             ClusterViewModelFactory(repository)
         )[ClusterViewModel::class.java]
 
+        handleIncomingIntent(intent)
+
         setContent {
             val context = LocalContext.current
             val sharedPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
@@ -126,6 +128,33 @@ class MainActivity : ComponentActivity() {
                         sharedPrefs.edit().putString("background_image_uri", newUri).apply()
                     }
                 )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        val dataUri = intent.data
+        if (Intent.ACTION_VIEW == action && dataUri != null) {
+            try {
+                contentResolver.openInputStream(dataUri)?.use { inputStream ->
+                    val bytes = inputStream.readBytes()
+                    val rawContent = String(bytes, Charsets.UTF_8).trim()
+                    if (rawContent.startsWith("LAKA:")) {
+                        viewModel.pendingImportLakaContent = rawContent
+                    } else {
+                        Toast.makeText(this, "This file is not a valid .laka file format.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Failed to read file: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1414,7 +1443,78 @@ fun ClusterAppScreen(
             onDismiss = { showImportExportDialog = false },
             currentLanguage = currentLanguage,
             exportLakaLauncher = exportLakaLauncher,
-            importLakaLauncher = importLakaLauncher
+            importLakaLauncher = importLakaLauncher,
+            onShareLaka = {
+                try {
+                    val lakaData = viewModel.exportClustersToLaka()
+                    val cacheFile = java.io.File(context.cacheDir, "locations.laka")
+                    cacheFile.writeText(lakaData, Charsets.UTF_8)
+                    
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        cacheFile
+                    )
+                    
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/octet-stream"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    
+                    context.startActivity(Intent.createChooser(intent, t("Share .laka Backup File", ".laka උපස්ථ ගොනුව Share කරන්න")))
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Sharing failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    // EXTERNAL LAKA FILE IMPORT CONFIRMATION DIALOG
+    if (viewModel.pendingImportLakaContent != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.pendingImportLakaContent = null },
+            title = {
+                Text(
+                    text = t("Import Locations?", "ස්ථාන ආනයනය කරන්නද?"),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            text = {
+                Text(
+                    text = t(
+                        "An external '.laka' backup file was opened. Would you like to import all the location codes from this file into your application?",
+                        "බාහිර '.laka' උපස්ථ ගොනුවක් විවෘත කරන ලදී. මෙම ගොනුවේ ඇති සියලුම ස්ථාන කේත මෙම ඇප් එකට ඇතුළත් කිරීමට ඔබට අවශ්‍යද?"
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    onClick = {
+                        val content = viewModel.pendingImportLakaContent
+                        if (content != null) {
+                            viewModel.importClustersFromLaka(content) { success, count, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                viewModel.pendingImportLakaContent = null
+                            }
+                        }
+                    }
+                ) {
+                    Text(t("Import", "ආනයනය කරන්න"), color = MaterialTheme.colorScheme.onPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.pendingImportLakaContent = null }
+                ) {
+                    Text(t("Cancel", "අවලංගු කරන්න"), color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 
@@ -2586,7 +2686,8 @@ fun LakaImportExportDialog(
     onDismiss: () -> Unit,
     currentLanguage: String,
     exportLakaLauncher: androidx.activity.result.ActivityResultLauncher<String>,
-    importLakaLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
+    importLakaLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    onShareLaka: () -> Unit
 ) {
     val t = { en: String, si: String -> if (currentLanguage == "si") si else en }
 
@@ -2686,6 +2787,58 @@ fun LakaImportExportDialog(
                                 text = t("Save current coordinate data safely", "පවතින සියලුම දත්ත සුරක්ෂිතව තබාගන්න"),
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Share Button Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onShareLaka()
+                        }
+                        .testTag("share_laka_card"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.tertiary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = "Share icon",
+                                tint = MaterialTheme.colorScheme.onTertiary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = t("Share .laka Backup File", ".laka ගොනුව Share කරන්න"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = t("Directly share file to other applications", "මෙම ගොනුව සෘජුවම වෙනත් ඇප්ස් වෙත යොමු කරන්න"),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                             )
                         }
                     }

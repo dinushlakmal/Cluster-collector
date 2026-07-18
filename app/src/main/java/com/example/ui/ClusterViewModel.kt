@@ -65,6 +65,8 @@ class ClusterViewModel(private val repository: ClusterRepository) : ViewModel() 
     var isSimulatedUser by androidx.compose.runtime.mutableStateOf(false)
         private set
 
+    var pendingImportLakaContent by androidx.compose.runtime.mutableStateOf<String?>(null)
+
     val userEmail: String
         get() = currentUser.value?.email ?: (if (isSimulatedUser) "demo.user@srilankamaps.lk" else "Not Signed In")
 
