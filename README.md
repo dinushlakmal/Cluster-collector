@@ -1,21 +1,26 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+<img width="1200" height="475" alt="GHBanner" src="" />
 </div>
 
-# Run and deploy your AI Studio app
+📱 New "Cluster Location Tracker" App Released for Field Officers! 📍
+We are excited to introduce a simple and efficient Android app built to help our Field Officers easily navigate to different cluster locations for loan installment collections.
 
-This contains everything you need to run your app locally.
+This app removes the hassle of finding routes manually and helps you reach your destinations much faster.
 
-View your app in AI Studio: https://ai.studio/apps/6bd3e878-8138-4fd7-a84f-29d25af87f53
+Key Features of the App:
 
-## Run Locally
+One-Touch Navigation: Simply tap on any Cluster Code, and the app will instantly open Google Maps to show the exact, real-time route from your current live location.
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+Easy Location Update: When you visit a cluster location for the first time, just type in the Cluster Code and click save to update the GPS coordinates instantly.
 
+Simplified Process: No need to enter individual Client IDs or private data—the app manages everything smoothly using just the Cluster Codes.
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+How to Use It:
+
+Open the app to view the complete list of saved Cluster Codes.
+
+Tap on the specific Cluster Code you need to visit.
+
+Google Maps will automatically launch and guide you to the destination.
+
+Please download and install the app using the link/file below:
