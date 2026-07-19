@@ -1,6 +1,4 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://drive.google.com/file/d/1vcoWcAth13-QVQjiHHhlwlVGoJxBboj_/view?usp=sharing" />
-</div>
+<img width="2752" height="1536" alt="Image" src="https://github.com/user-attachments/assets/1dcb494c-ea7a-4399-ade6-e670d1468278" />
 
 📱 New "Cluster Location Tracker" App Released for Field Officers! 📍
 We are excited to introduce a simple and efficient Android app built to help our Field Officers easily navigate to different cluster locations for loan installment collections.
