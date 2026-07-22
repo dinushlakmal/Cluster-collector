@@ -728,6 +728,36 @@ class ClusterViewModel(private val repository: ClusterRepository) : ViewModel() 
     fun resetLocationState() {
         _locationState.value = LocationUiState.Idle
     }
+
+    fun updateClusterCode(oldCluster: Cluster, newCode: String, onResult: (Boolean, String) -> Unit) {
+        val trimmedNewCode = newCode.trim().uppercase()
+        if (trimmedNewCode.isEmpty()) {
+            onResult(false, "Cluster code cannot be empty")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val existing = repository.getClusterByCode(trimmedNewCode)
+                if (existing != null && existing.clusterCode != oldCluster.clusterCode) {
+                    onResult(false, "Cluster code already exists")
+                    return@launch
+                }
+                
+                // Delete old one and insert new one
+                repository.delete(oldCluster)
+                val newCluster = Cluster(
+                    clusterCode = trimmedNewCode,
+                    latitude = oldCluster.latitude,
+                    longitude = oldCluster.longitude,
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.insert(newCluster)
+                onResult(true, "Cluster code updated successfully")
+            } catch (e: Exception) {
+                onResult(false, "Error updating cluster code: ${e.localizedMessage}")
+            }
+        }
+    }
 }
 
 class ClusterViewModelFactory(private val repository: ClusterRepository) : ViewModelProvider.Factory {

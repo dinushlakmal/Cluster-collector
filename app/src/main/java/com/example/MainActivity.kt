@@ -15,8 +15,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -353,8 +355,11 @@ fun ClusterAppScreen(
 
     // Search and filters
     var searchQuery by remember { mutableStateOf("") }
+    var selectedSubAreaFilter by remember { mutableStateOf("ALL") }
     var selectedTab by remember { mutableIntStateOf(0) }
     var clusterToDelete by remember { mutableStateOf<Cluster?>(null) }
+    var clusterToEdit by remember { mutableStateOf<Cluster?>(null) }
+    var editClusterCodeInput by remember { mutableStateOf("") }
     var showPermissionRationale by remember { mutableStateOf(false) }
 
     // Confirmation dialog state
@@ -371,13 +376,26 @@ fun ClusterAppScreen(
         )
     )
 
-    val filteredClusters = remember(clusters, searchQuery) {
-        if (searchQuery.isBlank()) {
-            clusters
-        } else {
-            clusters.filter {
-                it.clusterCode.contains(searchQuery.trim(), ignoreCase = true)
+    // Sub-Areas detected dynamically from saved clusters
+    val availableSubAreas = remember(clusters) {
+        val detected = clusters
+            .map { extractSubArea(it.clusterCode) }
+            .filter { it.isNotBlank() && it != "OTHER" }
+            .distinct()
+            .sorted()
+        listOf("ALL") + detected
+    }
+
+    val filteredClusters = remember(clusters, searchQuery, selectedSubAreaFilter) {
+        clusters.filter { cluster ->
+            val matchesSubArea = if (selectedSubAreaFilter == "ALL") true else {
+                extractSubArea(cluster.clusterCode).equals(selectedSubAreaFilter, ignoreCase = true)
             }
+            val query = searchQuery.trim()
+            val matchesSearch = if (query.isEmpty()) true else {
+                cluster.clusterCode.contains(query, ignoreCase = true)
+            }
+            matchesSubArea && matchesSearch
         }
     }
 
@@ -522,7 +540,7 @@ fun ClusterAppScreen(
             }
         }
     ) { innerPadding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -540,11 +558,16 @@ fun ClusterAppScreen(
                 ProceduralBackground(style = selectedBackgroundStyle, colorScheme = MaterialTheme.colorScheme)
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Transparent)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 840.dp)
+                        .background(Color.Transparent)
+                ) {
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -642,6 +665,59 @@ fun ClusterAppScreen(
                                             .fillMaxWidth()
                                             .testTag("search_input")
                                     )
+
+                                    if (availableSubAreas.size > 1) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = t("Sub-Area Filter:", "උප ප්‍රදේශ පෙරහන:"),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            if (selectedSubAreaFilter != "ALL") {
+                                                TextButton(
+                                                    onClick = { selectedSubAreaFilter = "ALL" },
+                                                    contentPadding = PaddingValues(0.dp)
+                                                ) {
+                                                    Text(t("Show All", "සියල්ල පෙන්වන්න"), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            availableSubAreas.forEach { area ->
+                                                val count = if (area == "ALL") clusters.size else clusters.count { extractSubArea(it.clusterCode) == area }
+                                                FilterChip(
+                                                    selected = selectedSubAreaFilter == area,
+                                                    onClick = { selectedSubAreaFilter = area },
+                                                    label = {
+                                                        Text(
+                                                            text = if (area == "ALL") t("All ($count)", "සියල්ල ($count)") else "$area ($count)",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = if (selectedSubAreaFilter == area) FontWeight.Bold else FontWeight.Normal
+                                                        )
+                                                    },
+                                                    leadingIcon = if (selectedSubAreaFilter == area) {
+                                                        { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                                    } else null,
+                                                    colors = FilterChipDefaults.filterChipColors(
+                                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -684,6 +760,10 @@ fun ClusterAppScreen(
                                                 },
                                                 onDeleteClick = {
                                                     clusterToDelete = cluster
+                                                },
+                                                onEditClick = {
+                                                    clusterToEdit = cluster
+                                                    editClusterCodeInput = cluster.clusterCode
                                                 }
                                             )
                                         }
@@ -742,6 +822,7 @@ fun ClusterAppScreen(
             }
         }
     }
+}
 }
 
     // GPS Rationale Dialog
@@ -831,6 +912,104 @@ fun ClusterAppScreen(
                 }
             },
             modifier = Modifier.testTag("delete_confirmation_dialog")
+        )
+    }
+
+    // Edit Cluster Code Dialog
+    clusterToEdit?.let { cluster ->
+        AlertDialog(
+            onDismissRequest = { clusterToEdit = null },
+            modifier = Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth(0.92f)
+                .testTag("edit_cluster_dialog"),
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = "Edit Cluster Code",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = t("Edit Cluster Code", "කාණ්ඩ කේතය සංස්කරණය කරන්න"),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = t("Current Code: ", "වත්මන් කේතය: "),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = cluster.clusterCode,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    SmartClusterCodeInput(
+                        value = editClusterCodeInput,
+                        onValueChange = { editClusterCodeInput = it },
+                        enabled = true,
+                        currentLanguage = currentLanguage,
+                        compactMode = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = editClusterCodeInput.trim().uppercase()
+                        val newCode = when {
+                            trimmed.startsWith("MN/") -> trimmed
+                            trimmed.startsWith("MN") -> "MN/" + trimmed.removePrefix("MN").removePrefix("/")
+                            trimmed.isNotEmpty() -> "MN/$trimmed"
+                            else -> ""
+                        }
+                        if (newCode.isEmpty() || newCode == "MN/") {
+                            Toast.makeText(context, t("Please enter a valid cluster code", "කරුණාකර වලංගු කාණ්ඩ කේතයක් ඇතුළත් කරන්න"), Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.updateClusterCode(cluster, newCode) { success, message ->
+                                if (success) {
+                                    Toast.makeText(context, t("Cluster code updated successfully", "කාණ්ඩ කේතය සාර්ථකව යාවත්කාලීන කරන ලදී"), Toast.LENGTH_SHORT).show()
+                                    clusterToEdit = null
+                                } else {
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(t("Save", "සුරකින්න"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clusterToEdit = null }) {
+                    Text(t("Cancel", "අවලංගු කරන්න"))
+                }
+            }
         )
     }
 
@@ -1063,29 +1242,12 @@ fun ClusterAppScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Common Cluster Code field
-                    OutlinedTextField(
+                    // Common Cluster Code field with static MN/ prefix & smart input helper
+                    SmartClusterCodeInput(
                         value = clusterCodeInput,
                         onValueChange = { clusterCodeInput = it },
-                        label = { Text("Cluster Code") },
-                        placeholder = { Text("e.g. COLOMBO-01, KANDY-A") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.QrCode,
-                                contentDescription = "Cluster Code Code",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("cluster_code_field"),
-                        enabled = locationState !is LocationUiState.Fetching,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                        )
+                        enabled = locationState !is LocationUiState.Fetching && !isParsingLink,
+                        currentLanguage = currentLanguage
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1808,7 +1970,8 @@ fun ClusterAppScreen(
 fun ClusterCardItem(
     cluster: Cluster,
     onNavigateClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onEditClick: () -> Unit
 ) {
     val dateString = remember(cluster.updatedAt) {
         val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
@@ -1861,6 +2024,23 @@ fun ClusterCardItem(
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.testTag("cluster_title_${cluster.clusterCode}")
                         )
+
+                        val subArea = remember(cluster.clusterCode) { extractSubArea(cluster.clusterCode) }
+                        if (subArea.isNotBlank() && subArea != "OTHER") {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = subArea,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1885,15 +2065,28 @@ fun ClusterCardItem(
                     }
                 }
 
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.testTag("delete_button_${cluster.clusterCode}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = "Remove Cluster",
-                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.testTag("edit_button_${cluster.clusterCode}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Edit Cluster Code",
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.testTag("delete_button_${cluster.clusterCode}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = "Remove Cluster",
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
 
@@ -2068,6 +2261,25 @@ fun NoSearchResultsLayout(query: String) {
     }
 }
 
+fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return r * c
+}
+
+fun formatDistance(km: Double): String {
+    return if (km < 1.0) {
+        "${(km * 1000).toInt()}m"
+    } else {
+        "${"%.1f".format(km)}km"
+    }
+}
+
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun InteractiveMapScreen(
@@ -2079,7 +2291,6 @@ fun InteractiveMapScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val mapType = "radar"
     var zoom by remember { mutableFloatStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
 
@@ -2121,53 +2332,35 @@ fun InteractiveMapScreen(
         }
     }
 
-    // Auto sync location when screen launches and periodically every 12 seconds
+    // Auto sync location when screen launches and periodically every 10 seconds
     LaunchedEffect(Unit) {
         syncUserLocation()
         while (true) {
-            kotlinx.coroutines.delay(12000)
+            kotlinx.coroutines.delay(10000)
             syncUserLocation()
         }
     }
 
-    // Dynamic scale helper based on coordinates
-    val averageLat = remember(clusters, userLocation) {
-        if (clusters.isNotEmpty()) {
-            clusters.map { it.latitude }.average()
-        } else if (userLocation != null) {
-            userLocation!!.first
-        } else {
-            7.8731 // Sri Lanka center
-        }
+    // Device location is strictly prioritized as the RADAR CENTER
+    val centerLat = remember(userLocation, clusters) {
+        userLocation?.first ?: if (clusters.isNotEmpty()) clusters.map { it.latitude }.average() else 7.8731
     }
-    val averageLng = remember(clusters, userLocation) {
-        if (clusters.isNotEmpty()) {
-            clusters.map { it.longitude }.average()
-        } else if (userLocation != null) {
-            userLocation!!.second
-        } else {
-            80.7718 // Sri Lanka center
-        }
+    val centerLng = remember(userLocation, clusters) {
+        userLocation?.second ?: if (clusters.isNotEmpty()) clusters.map { it.longitude }.average() else 80.7718
     }
 
-    val baseScale = remember(clusters) {
+    val baseScale = remember(clusters, centerLat, centerLng) {
         if (clusters.isEmpty()) {
-            5000f
+            6000f
         } else {
-            val lats = clusters.map { it.latitude }
-            val lngs = clusters.map { it.longitude }
-            val minLat = lats.minOrNull() ?: 7.0
-            val maxLat = lats.maxOrNull() ?: 7.0
-            val minLng = lngs.minOrNull() ?: 80.0
-            val maxLng = lngs.maxOrNull() ?: 80.0
-            val latDiff = maxLat - minLat
-            val lngDiff = maxLng - minLng
-            val maxDiff = maxOf(latDiff, lngDiff)
+            val maxLatDiff = clusters.maxOfOrNull { Math.abs(it.latitude - centerLat) } ?: 0.001
+            val maxLngDiff = clusters.maxOfOrNull { Math.abs(it.longitude - centerLng) } ?: 0.001
+            val maxDiff = maxOf(maxLatDiff, maxLngDiff)
             if (maxDiff > 0.0001) {
-                // scale so that max distance fits beautifully in 200 density pixels
-                (200f / maxDiff.toFloat())
+                // scale so that furthest cluster fits comfortably inside 180dp radius
+                (180f / maxDiff.toFloat())
             } else {
-                8000f // close default
+                8000f
             }
         }
     }
@@ -2177,7 +2370,6 @@ fun InteractiveMapScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
     ) {
-        // Coordinate Grid Canvas is always shown!
         val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
         val primaryColor = MaterialTheme.colorScheme.primary
         val secondaryColor = MaterialTheme.colorScheme.secondary
@@ -2189,489 +2381,492 @@ fun InteractiveMapScreen(
             val centerY = canvasHeight / 2f
 
             Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(clusters, zoom, panOffset) {
-                            detectTapGestures { tapOffset ->
-                                // Tap detection: find nearest cluster pin within 32dp of tap
-                                val tapThresholdPx = 32f * density
-                                var foundCluster: Cluster? = null
-                                var minDistance = Double.MAX_VALUE
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(clusters, zoom, panOffset) {
+                        detectTapGestures { tapOffset ->
+                            val tapThresholdPx = 36f * density
+                            var foundCluster: Cluster? = null
+                            var minDistance = Double.MAX_VALUE
 
-                                clusters.forEach { cluster ->
-                                    val x = centerX + (cluster.longitude - averageLng).toFloat() * baseScale * zoom + panOffset.x
-                                    val y = centerY - (cluster.latitude - averageLat).toFloat() * baseScale * zoom + panOffset.y
-                                    val dist = Math.hypot((tapOffset.x - x).toDouble(), (tapOffset.y - y).toDouble())
-                                    if (dist < tapThresholdPx && dist < minDistance) {
-                                        minDistance = dist
-                                        foundCluster = cluster
-                                    }
+                            clusters.forEach { cluster ->
+                                val x = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
+                                val y = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
+                                val dist = Math.hypot((tapOffset.x - x).toDouble(), (tapOffset.y - y).toDouble())
+                                if (dist < tapThresholdPx && dist < minDistance) {
+                                    minDistance = dist
+                                    foundCluster = cluster
                                 }
-                                onSelectedClusterOnMapChange(foundCluster)
                             }
-                        }
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                panOffset = Offset(panOffset.x + dragAmount.x, panOffset.y + dragAmount.y)
-                            }
-                        }
-                        .testTag("interactive_map_canvas")
-                ) {
-                    // A. Draw tactical CRT green/blue radial scan scope background gradient
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                primaryColor.copy(alpha = 0.15f),
-                                Color.Transparent
-                            ),
-                            center = Offset(centerX + panOffset.x, centerY + panOffset.y),
-                            radius = 650f * zoom
-                        )
-                    )
-
-                    // B. Draw concentric range scanning circles (Radar scan sectors)
-                    val ringRadii = listOf(100f, 250f, 400f, 550f, 700f)
-                    ringRadii.forEach { r ->
-                        drawCircle(
-                            color = primaryColor.copy(alpha = 0.22f),
-                            radius = r * zoom,
-                            center = Offset(centerX + panOffset.x, centerY + panOffset.y),
-                            style = Stroke(width = 1.5f)
-                        )
-                    }
-
-                    // C. Draw sweeping active active radar search beam
-                    val angleRad = Math.toRadians(sweepAngle.toDouble())
-                    val scanLineLength = 850f * zoom
-                    val scanEndX = (centerX + panOffset.x) + (Math.cos(angleRad) * scanLineLength).toFloat()
-                    val scanEndY = (centerY + panOffset.y) + (Math.sin(angleRad) * scanLineLength).toFloat()
-
-                    // Active beam line
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.5f),
-                        start = Offset(centerX + panOffset.x, centerY + panOffset.y),
-                        end = Offset(scanEndX, scanEndY),
-                        strokeWidth = 3f
-                    )
-
-                    // Active sweep trail echo lines
-                    for (i in 1..4) {
-                        val trailAngleRad = Math.toRadians((sweepAngle - (i * 4f)).toDouble())
-                        val trailEndX = (centerX + panOffset.x) + (Math.cos(trailAngleRad) * scanLineLength).toFloat()
-                        val trailEndY = (centerY + panOffset.y) + (Math.sin(trailAngleRad) * scanLineLength).toFloat()
-                        drawLine(
-                            color = primaryColor.copy(alpha = 0.3f / i),
-                            start = Offset(centerX + panOffset.x, centerY + panOffset.y),
-                            end = Offset(trailEndX, trailEndY),
-                            strokeWidth = 2f
-                        )
-                    }
-
-                    // 1. Draw subtle tactical coordinate grid lines
-                    val step = 120f // pixels between grid lines
-                    val startX = (panOffset.x % step) - step
-                    val startY = (panOffset.y % step) - step
-
-                    for (x in generateSequence(startX) { it + step }.takeWhile { it < canvasWidth + step }) {
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(x, 0f),
-                            end = Offset(x, canvasHeight),
-                            strokeWidth = 1f
-                        )
-                    }
-                    for (y in generateSequence(startY) { it + step }.takeWhile { it < canvasHeight + step }) {
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(0f, y),
-                            end = Offset(canvasWidth, y),
-                            strokeWidth = 1f
-                        )
-                    }
-
-                    // 2. Center target axis lines
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.15f),
-                        start = Offset(centerX + panOffset.x, 0f),
-                        end = Offset(centerX + panOffset.x, canvasHeight),
-                        strokeWidth = 2f
-                    )
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.1f),
-                        start = Offset(0f, centerY + panOffset.y),
-                        end = Offset(canvasWidth, centerY + panOffset.y),
-                        strokeWidth = 2f
-                    )
-
-                    // 3. Draw user location pulsing blue dot on canvas
-                    userLocation?.let { loc ->
-                        val x = centerX + (loc.second - averageLng).toFloat() * baseScale * zoom + panOffset.x
-                        val y = centerY - (loc.first - averageLat).toFloat() * baseScale * zoom + panOffset.y
-                        
-                        if (x >= -50f && x <= canvasWidth + 50f && y >= -50f && y <= canvasHeight + 50f) {
-                            val pulseRadius = 16f + (sweepAngle % 90f) * 0.15f
-                            drawCircle(
-                                color = Color(0xFF3b82f6).copy(alpha = 0.25f),
-                                radius = pulseRadius * zoom,
-                                center = Offset(x, y)
-                            )
-                            drawCircle(
-                                color = Color(0xFF3b82f6),
-                                radius = 7f * zoom,
-                                center = Offset(x, y)
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 2.5f * zoom,
-                                center = Offset(x, y)
-                            )
+                            onSelectedClusterOnMapChange(foundCluster)
                         }
                     }
-
-                    // 4. Plot Cluster Pins
-                    clusters.forEach { cluster ->
-                        val x = centerX + (cluster.longitude - averageLng).toFloat() * baseScale * zoom + panOffset.x
-                        val y = centerY - (cluster.latitude - averageLat).toFloat() * baseScale * zoom + panOffset.y
-
-                        // Only draw if within bounds
-                        if (x >= -50f && x <= canvasWidth + 50f && y >= -50f && y <= canvasHeight + 50f) {
-                            val isSelected = selectedClusterOnMap?.clusterCode == cluster.clusterCode
-                            val pinColor = if (isSelected) primaryColor else secondaryColor
-
-                            // Glow pulse ring
-                            drawCircle(
-                                color = pinColor.copy(alpha = 0.15f),
-                                radius = if (isSelected) 36f else 22f,
-                                center = Offset(x, y)
-                            )
-                            drawCircle(
-                                color = pinColor.copy(alpha = 0.3f),
-                                radius = if (isSelected) 24f else 14f,
-                                center = Offset(x, y)
-                            )
-
-                            // Solid center pin dot
-                            drawCircle(
-                                color = pinColor,
-                                radius = 8f,
-                                center = Offset(x, y)
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 3f,
-                                center = Offset(x, y)
-                            )
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            panOffset = Offset(panOffset.x + dragAmount.x, panOffset.y + dragAmount.y)
                         }
                     }
+                    .testTag("interactive_map_canvas")
+            ) {
+                val radarX = centerX + panOffset.x
+                val radarY = centerY + panOffset.y
+
+                // A. Radar Scope Radial Gradient
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            primaryColor.copy(alpha = 0.18f),
+                            Color.Transparent
+                        ),
+                        center = Offset(radarX, radarY),
+                        radius = 650f * zoom
+                    )
+                )
+
+                // B. Concentric Radar Range Rings
+                val ringRadii = listOf(90f, 200f, 340f, 500f, 680f)
+                ringRadii.forEach { r ->
+                    drawCircle(
+                        color = primaryColor.copy(alpha = 0.22f),
+                        radius = r * zoom,
+                        center = Offset(radarX, radarY),
+                        style = Stroke(width = 1.5f)
+                    )
                 }
 
-                // Overlay User Location Name cleanly on Radar view
-                userLocation?.let { loc ->
-                    val x = centerX + (loc.second - averageLng).toFloat() * baseScale * zoom + panOffset.x
-                    val y = centerY - (loc.first - averageLat).toFloat() * baseScale * zoom + panOffset.y
-                    
-                    val xDp = with(LocalDensity.current) { x.toDp() }
-                    val yDp = with(LocalDensity.current) { y.toDp() }
-                    
-                    if (x >= 20f && x <= canvasWidth - 20f && y >= 20f && y <= canvasHeight - 20f) {
-                        Box(
-                            modifier = Modifier
-                                .offset(xDp - 50.dp, yDp - 36.dp)
-                                .width(100.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFF1d4ed8) // Solid Blue card for user location
-                                ),
-                                shape = RoundedCornerShape(6.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Text(
-                                    text = "MY LOCATION",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
+                // C. Active Sweeping Radar Line
+                val angleRad = Math.toRadians(sweepAngle.toDouble())
+                val scanLineLength = 800f * zoom
+                val scanEndX = radarX + (Math.cos(angleRad) * scanLineLength).toFloat()
+                val scanEndY = radarY + (Math.sin(angleRad) * scanLineLength).toFloat()
+
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.6f),
+                    start = Offset(radarX, radarY),
+                    end = Offset(scanEndX, scanEndY),
+                    strokeWidth = 3f
+                )
+
+                for (i in 1..5) {
+                    val trailAngleRad = Math.toRadians((sweepAngle - (i * 3.5f)).toDouble())
+                    val trailEndX = radarX + (Math.cos(trailAngleRad) * scanLineLength).toFloat()
+                    val trailEndY = radarY + (Math.sin(trailAngleRad) * scanLineLength).toFloat()
+                    drawLine(
+                        color = primaryColor.copy(alpha = 0.35f / i),
+                        start = Offset(radarX, radarY),
+                        end = Offset(trailEndX, trailEndY),
+                        strokeWidth = 2.5f
+                    )
                 }
 
-                // Overlay Cluster Pin Names cleanly (using Box to compose Compose text layouts cleanly above the canvas)
-                clusters.forEachIndexed { index, cluster ->
-                    val x = centerX + (cluster.longitude - averageLng).toFloat() * baseScale * zoom + panOffset.x
-                    val y = centerY - (cluster.latitude - averageLat).toFloat() * baseScale * zoom + panOffset.y
+                // D. Tactical Grid
+                val step = 120f
+                val startX = (panOffset.x % step) - step
+                val startY = (panOffset.y % step) - step
 
-                    val xDp = with(LocalDensity.current) { x.toDp() }
-                    val yDp = with(LocalDensity.current) { y.toDp() }
+                for (x in generateSequence(startX) { it + step }.takeWhile { it < canvasWidth + step }) {
+                    drawLine(color = gridColor, start = Offset(x, 0f), end = Offset(x, canvasHeight), strokeWidth = 1f)
+                }
+                for (y in generateSequence(startY) { it + step }.takeWhile { it < canvasHeight + step }) {
+                    drawLine(color = gridColor, start = Offset(0f, y), end = Offset(canvasWidth, y), strokeWidth = 1f)
+                }
 
-                    if (x >= 20f && x <= canvasWidth - 20f && y >= 20f && y <= canvasHeight - 20f) {
+                // Crosshair Center Target Lines
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.3f),
+                    start = Offset(radarX, 0f),
+                    end = Offset(radarX, canvasHeight),
+                    strokeWidth = 1.5f
+                )
+                drawLine(
+                    color = primaryColor.copy(alpha = 0.3f),
+                    start = Offset(0f, radarY),
+                    end = Offset(canvasWidth, radarY),
+                    strokeWidth = 1.5f
+                )
+
+                // E. Draw Network Mesh vector lines connecting Radar Center (User) to surrounding Clusters
+                clusters.forEach { cluster ->
+                    val cx = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
+                    val cy = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
+
+                    if (cx >= -100f && cx <= canvasWidth + 100f && cy >= -100f && cy <= canvasHeight + 100f) {
                         val isSelected = selectedClusterOnMap?.clusterCode == cluster.clusterCode
-                        val yOffset = if (isSelected) {
-                            yDp - 36.dp
-                        } else if (index % 2 == 0) {
-                            yDp - 36.dp
-                        } else {
-                            yDp + 12.dp
-                        }
-                        Box(
-                            modifier = Modifier
-                                .offset(xDp - 50.dp, yOffset)
-                                .width(100.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
-                                ),
-                                shape = RoundedCornerShape(6.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp)
-                            ) {
-                                Text(
-                                    text = cluster.clusterCode,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                        drawLine(
+                            color = if (isSelected) primaryColor.copy(alpha = 0.8f) else Color(0xFFFF6B00).copy(alpha = 0.45f),
+                            start = Offset(radarX, radarY),
+                            end = Offset(cx, cy),
+                            strokeWidth = if (isSelected) 2.5f else 1.2f
+                        )
                     }
                 }
 
-                // Top Floating Control Dashboard overlay
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        IconButton(
-                            onClick = { zoom = (zoom + 0.5f).coerceAtMost(8f) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ZoomIn,
-                                contentDescription = "Zoom In",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { zoom = (zoom - 0.5f).coerceAtLeast(0.4f) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ZoomOut,
-                                contentDescription = "Zoom Out",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                zoom = 1f
-                                panOffset = Offset.Zero
-                                onSelectedClusterOnMapChange(null)
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.FilterCenterFocus,
-                                contentDescription = "Recenter Map",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                syncUserLocation()
-                                Toast.makeText(context, "GPS synced successfully / GPS සමමුහුර්ත කෙරිණි", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MyLocation,
-                                contentDescription = "Sync GPS Location",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                // F. RADAR CENTER: Device Location (User)
+                val userPulseRadius = 18f + (sweepAngle % 90f) * 0.2f
+                // Pulse Ring 1
+                drawCircle(
+                    color = Color(0xFF3B82F6).copy(alpha = 0.25f),
+                    radius = userPulseRadius * zoom,
+                    center = Offset(radarX, radarY)
+                )
+                // Pulse Ring 2
+                drawCircle(
+                    color = Color(0xFF2563EB).copy(alpha = 0.5f),
+                    radius = 12f * zoom,
+                    center = Offset(radarX, radarY)
+                )
+                // Core Blue Dot
+                drawCircle(
+                    color = Color(0xFF1D4ED8),
+                    radius = 8f * zoom,
+                    center = Offset(radarX, radarY)
+                )
+                // White Center Spot
+                drawCircle(
+                    color = Color.White,
+                    radius = 3f * zoom,
+                    center = Offset(radarX, radarY)
+                )
+
+                // G. Plot Surrounding Cluster Pins
+                clusters.forEach { cluster ->
+                    val x = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
+                    val y = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
+
+                    if (x >= -50f && x <= canvasWidth + 50f && y >= -50f && y <= canvasHeight + 50f) {
+                        val isSelected = selectedClusterOnMap?.clusterCode == cluster.clusterCode
+                        val pinColor = if (isSelected) primaryColor else Color(0xFF0F2942)
+
+                        drawCircle(
+                            color = if (isSelected) primaryColor.copy(alpha = 0.25f) else Color(0xFFFF6B00).copy(alpha = 0.2f),
+                            radius = if (isSelected) 34f else 22f,
+                            center = Offset(x, y)
+                        )
+                        drawCircle(
+                            color = pinColor,
+                            radius = if (isSelected) 10f else 8f,
+                            center = Offset(x, y)
+                        )
+                        drawCircle(
+                            color = Color(0xFFFF6B00),
+                            radius = 3.5f,
+                            center = Offset(x, y)
+                        )
                     }
                 }
+            }
 
-                // Compass Rose / Coordinates HUD overlay top right
-                Card(
+            // Overlay Badge for Radar Center (User Location)
+            val userDpX = with(LocalDensity.current) { (centerX + panOffset.x).toDp() }
+            val userDpY = with(LocalDensity.current) { (centerY + panOffset.y).toDp() }
+
+            if ((centerX + panOffset.x) >= 10f && (centerX + panOffset.x) <= canvasWidth - 10f &&
+                (centerY + panOffset.y) >= 10f && (centerY + panOffset.y) <= canvasHeight - 10f) {
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        .offset(userDpX - 55.dp, userDpY - 38.dp)
+                        .width(110.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Surface(
+                        color = Color(0xFF1D4ED8),
+                        shape = RoundedCornerShape(8.dp),
+                        shadowElevation = 4.dp
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Explore,
-                                contentDescription = "Compass",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                "COMPASS HUD",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                text = "MY LOCATION",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Zoom: ${"%.1f".format(zoom)}x",
-                            fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                }
+            }
+
+            // Overlay Badges for Surrounding Clusters with distance from Radar Center
+            clusters.forEachIndexed { index, cluster ->
+                val x = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
+                val y = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
+
+                val xDp = with(LocalDensity.current) { x.toDp() }
+                val yDp = with(LocalDensity.current) { y.toDp() }
+
+                if (x >= 20f && x <= canvasWidth - 20f && y >= 20f && y <= canvasHeight - 20f) {
+                    val isSelected = selectedClusterOnMap?.clusterCode == cluster.clusterCode
+                    val distKm = if (userLocation != null) {
+                        calculateDistanceKm(userLocation!!.first, userLocation!!.second, cluster.latitude, cluster.longitude)
+                    } else null
+                    val distLabel = if (distKm != null) " • ${formatDistance(distKm)}" else ""
+
+                    val yOffset = if (isSelected) {
+                        yDp - 38.dp
+                    } else if (index % 2 == 0) {
+                        yDp - 38.dp
+                    } else {
+                        yDp + 14.dp
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .offset(xDp - 60.dp, yOffset)
+                            .width(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 6.dp else 2.dp)
+                        ) {
+                            Text(
+                                text = "${cluster.clusterCode}$distLabel",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+                                textAlign = TextAlign.Center,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Floating Map Controls Dashboard
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = { zoom = (zoom + 0.5f).coerceAtMost(8f) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ZoomIn,
+                            contentDescription = "Zoom In",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Text(
-                            "Center Lng: ${"%.4f".format(averageLng - panOffset.x / (baseScale * zoom))}",
-                            fontSize = 8.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    }
+                    IconButton(
+                        onClick = { zoom = (zoom - 0.5f).coerceAtLeast(0.4f) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ZoomOut,
+                            contentDescription = "Zoom Out",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Text(
-                            "Center Lat: ${"%.4f".format(averageLat + panOffset.y / (baseScale * zoom))}",
-                            fontSize = 8.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    }
+                    IconButton(
+                        onClick = {
+                            zoom = 1f
+                            panOffset = Offset.Zero
+                            onSelectedClusterOnMapChange(null)
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FilterCenterFocus,
+                            contentDescription = "Center on My Location",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            syncUserLocation()
+                            panOffset = Offset.Zero
+                            Toast.makeText(context, "Location synced to Radar Center / ලොකේෂනය රේඩාර් මැදට සමමුහුර්ත විය", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MyLocation,
+                            contentDescription = "Sync GPS Location",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
+            }
 
-                // Selected Pin Details Card overlay bottom
-                AnimatedVisibility(
-                    visible = selectedClusterOnMap != null,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(16.dp)
+            // Radar HUD Status overlay top right
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    selectedClusterOnMap?.let { cluster ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            shape = RoundedCornerShape(20.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.primaryContainer),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.LocationSearching,
-                                                contentDescription = "Selected Pin",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = cluster.clusterCode,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = "Lat: %.5f° | Lng: %.5f°".format(cluster.latitude, cluster.longitude),
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Radar,
+                            contentDescription = "Radar Scope",
+                            tint = Color(0xFF1D4ED8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "RADAR CENTER",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1D4ED8)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        if (userLocation != null) "Lat: ${"%.4f".format(userLocation!!.first)}" else "GPS Searching...",
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        if (userLocation != null) "Lng: ${"%.4f".format(userLocation!!.second)}" else "Acquiring...",
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-                                    IconButton(
-                                        onClick = { onSelectedClusterOnMapChange(null) }
+            // Selected Pin Details Card overlay bottom
+            AnimatedVisibility(
+                visible = selectedClusterOnMap != null,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                selectedClusterOnMap?.let { cluster ->
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.Close,
-                                            contentDescription = "Close Details",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            imageVector = Icons.Rounded.LocationSearching,
+                                            contentDescription = "Selected Pin",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = cluster.clusterCode,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Lat: %.5f° | Lng: %.5f°".format(cluster.latitude, cluster.longitude),
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                IconButton(
+                                    onClick = { onSelectedClusterOnMapChange(null) }
                                 ) {
-                                    OutlinedButton(
-                                        onClick = { onSelectCluster(cluster) },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(42.dp),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.List,
-                                            contentDescription = "View in List",
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("View in List", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Close Details",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
 
-                                    Button(
-                                        onClick = {
-                                            viewModel.navigateToCluster(cluster, context)
-                                        },
-                                        modifier = Modifier
-                                            .weight(1.2f)
-                                            .height(42.dp),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.NearMe,
-                                            contentDescription = "Navigate",
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Navigate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { onSelectCluster(cluster) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.List,
+                                        contentDescription = "View in List",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("View in List", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        viewModel.navigateToCluster(cluster, context)
+                                    },
+                                    modifier = Modifier
+                                        .weight(1.2f)
+                                        .height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.NearMe,
+                                        contentDescription = "Navigate",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Navigate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -2680,6 +2875,7 @@ fun InteractiveMapScreen(
             }
         }
     }
+}
 
 @Composable
 fun LakaImportExportDialog(
@@ -2904,6 +3100,243 @@ fun LakaImportExportDialog(
                 ) {
                     Text(t("Dismiss", "අවලංගු කරන්න"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                 }
+            }
+        }
+    }
+}
+
+fun extractSubArea(clusterCode: String): String {
+    val clean = clusterCode.trim().uppercase()
+    val parts = clean.split("/", "-")
+    return when {
+        clean.startsWith("MN/") && parts.size >= 3 -> parts[1]
+        clean.startsWith("MN/") && parts.size == 2 -> parts[1]
+        parts.size >= 2 && parts[0] != "MN" -> parts[0]
+        parts.size >= 2 -> parts[1]
+        clean.startsWith("MN/") -> clean.removePrefix("MN/")
+        else -> if (clean.isNotBlank()) clean else "OTHER"
+    }
+}
+
+fun parseClusterCodeParts(input: String): Pair<String, String> {
+    val clean = input.trim().uppercase()
+    val withoutPrefix = when {
+        clean.startsWith("MN/") -> clean.removePrefix("MN/")
+        clean.startsWith("MN-") -> clean.removePrefix("MN-")
+        clean.startsWith("MN") -> clean.removePrefix("MN").removePrefix("/").removePrefix("-")
+        else -> clean
+    }
+    if (withoutPrefix.isBlank()) return Pair("", "")
+    val parts = withoutPrefix.split("/", "-")
+    return when {
+        parts.size >= 2 -> Pair(parts[0].trim().uppercase(), parts[1].trim().uppercase())
+        parts.size == 1 -> Pair(parts[0].trim().uppercase(), "")
+        else -> Pair("", "")
+    }
+}
+
+fun buildClusterCode(subArea: String, number: String): String {
+    val sa = subArea.trim().uppercase()
+    val num = number.trim().uppercase()
+    return when {
+        sa.isNotEmpty() && num.isNotEmpty() -> "MN/$sa/$num"
+        sa.isNotEmpty() -> "MN/$sa"
+        num.isNotEmpty() -> "MN/$num"
+        else -> "MN/"
+    }
+}
+
+@Composable
+fun SmartClusterCodeInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    currentLanguage: String = "en",
+    compactMode: Boolean = false
+) {
+    val t = { en: String, si: String -> if (currentLanguage == "si") si else en }
+
+    var subAreaInput by remember { mutableStateOf(parseClusterCodeParts(value).first) }
+    var numberInput by remember { mutableStateOf(parseClusterCodeParts(value).second) }
+
+    LaunchedEffect(value) {
+        val (s, n) = parseClusterCodeParts(value)
+        val currentConstructed = buildClusterCode(subAreaInput, numberInput)
+        if (value != currentConstructed) {
+            subAreaInput = s
+            numberInput = n
+        }
+    }
+
+    val fullFormattedCode = buildClusterCode(subAreaInput, numberInput)
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(if (compactMode) 6.dp else 8.dp)
+    ) {
+        if (!compactMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.QrCode,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = t("Cluster Code (Static Prefix: MN/)", "කාණ්ඩ කේතය (ස්ථාවර උපසර්ගය: MN/)"),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "MN /",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+
+            OutlinedTextField(
+                value = subAreaInput,
+                onValueChange = { input ->
+                    val upper = input.uppercase().replace(" ", "")
+                    subAreaInput = upper
+                    val newCode = buildClusterCode(upper, numberInput)
+                    onValueChange(newCode)
+                },
+                label = { Text(t("Sub-Area", "උප ප්‍රදේශය"), fontSize = 11.sp) },
+                placeholder = { Text("GD") },
+                singleLine = true,
+                enabled = enabled,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("sub_area_field"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                )
+            )
+
+            Text(
+                text = "/",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            OutlinedTextField(
+                value = numberInput,
+                onValueChange = { input ->
+                    val upper = input.uppercase().replace(" ", "")
+                    numberInput = upper
+                    val newCode = buildClusterCode(subAreaInput, upper)
+                    onValueChange(newCode)
+                },
+                label = { Text(t("Cluster No.", "කාණ්ඩ අංකය"), fontSize = 11.sp) },
+                placeholder = { Text("01") },
+                singleLine = true,
+                enabled = enabled,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("cluster_number_field"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+
+        val popularSubAreas = listOf("GD", "CM", "KL", "GP", "MH", "KG")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = t("Preset:", "පෙරසිටුවම්:"),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            popularSubAreas.forEach { area ->
+                FilterChip(
+                    selected = subAreaInput == area,
+                    onClick = {
+                        subAreaInput = area
+                        val newCode = buildClusterCode(area, numberInput)
+                        onValueChange(newCode)
+                    },
+                    label = { Text(area, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                    modifier = Modifier.height(26.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            ),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = if (compactMode) 4.dp else 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Verified,
+                        contentDescription = "Code Preview",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = t("Cluster Code:", "කාණ්ඩ කේතය:"),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Text(
+                    text = fullFormattedCode.ifEmpty { "MN/" },
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

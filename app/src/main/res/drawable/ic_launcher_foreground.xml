@@ -3,25 +3,66 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    
-    <!-- Bold Drop Shadow under the pin -->
-    <path
-        android:fillColor="#22000000"
-        android:pathData="M54,23 C44,23 35,32 35,43.5 C35,58.6 54,89 54,89 C54,89 73,58.6 73,43.5 C73,32 64,23 54,23 Z" />
 
-    <!-- Main Pin body -->
+    <!-- Outer Border Frame -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#0F2942"
+        android:strokeWidth="1.5"
+        android:pathData="M18,18 H90 V90 H18 Z" />
+
+    <!-- Network Connection Lines (Glow Orange #FF6B00) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF6B00"
+        android:strokeWidth="1.2"
+        android:pathData="M54,26 L73,34 M73,34 L81,54 M81,54 L73,74 M73,74 L54,82 M54,82 L35,74 M35,74 L27,54 M27,54 L35,34 M35,34 L54,26 M54,26 L54,54 M73,34 L54,54 M81,54 L54,54 M73,74 L54,54 M54,82 L54,54 M35,74 L54,54 M27,54 L54,54 M35,34 L54,54 M54,26 L81,54 M81,54 L54,82 M54,82 L27,54 M27,54 L54,26 M73,34 L73,74 M73,74 L35,74 M35,74 L35,34 M35,34 L73,34" />
+
+    <!-- Outer 8 Location Pins (Navy Blue) -->
+    <!-- Node 1: Top (54, 26) -->
+    <path android:fillColor="#0F2942" android:pathData="M54,20 C51.5,20 49.5,22 49.5,24.5 C49.5,28 54,32 54,32 C54,32 58.5,28 58.5,24.5 C58.5,22 56.5,20 54,20 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,23.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 2: Top-Right (73, 34) -->
+    <path android:fillColor="#0F2942" android:pathData="M73,28 C70.5,28 68.5,30 68.5,32.5 C68.5,36 73,40 73,40 C73,40 77.5,36 77.5,32.5 C77.5,30 75.5,28 73,28 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M73,31.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 3: Right (81, 54) -->
+    <path android:fillColor="#0F2942" android:pathData="M81,48 C78.5,48 76.5,50 76.5,52.5 C76.5,56 81,60 81,60 C81,60 85.5,56 85.5,52.5 C85.5,50 83.5,48 81,48 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M81,51.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 4: Bottom-Right (73, 74) -->
+    <path android:fillColor="#0F2942" android:pathData="M73,68 C70.5,68 68.5,70 68.5,72.5 C68.5,76 73,80 73,80 C73,80 77.5,76 77.5,72.5 C77.5,70 75.5,68 73,68 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M73,71.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 5: Bottom (54, 82) -->
+    <path android:fillColor="#0F2942" android:pathData="M54,76 C51.5,76 49.5,78 49.5,80.5 C49.5,84 54,88 54,88 C54,88 58.5,84 58.5,80.5 C58.5,78 56.5,76 54,76 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,79.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 6: Bottom-Left (35, 74) -->
+    <path android:fillColor="#0F2942" android:pathData="M35,68 C32.5,68 30.5,70 30.5,72.5 C30.5,76 35,80 35,80 C35,80 39.5,76 39.5,72.5 C39.5,70 37.5,68 35,68 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M35,71.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 7: Left (27, 54) -->
+    <path android:fillColor="#0F2942" android:pathData="M27,48 C24.5,48 22.5,50 22.5,52.5 C22.5,56 27,60 27,60 C27,60 31.5,56 31.5,52.5 C31.5,50 29.5,48 27,48 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M27,51.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Node 8: Top-Left (35, 34) -->
+    <path android:fillColor="#0F2942" android:pathData="M35,28 C32.5,28 30.5,30 30.5,32.5 C30.5,36 35,40 35,40 C35,40 39.5,36 39.5,32.5 C39.5,30 37.5,28 35,28 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M35,31.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Hero Central Location Pin Marker (Navy Blue + Vibrant Orange Core) -->
+    <path
+        android:fillColor="#30000000"
+        android:pathData="M54,40 C43,40 34,49 34,60 C34,73 54,98 54,98 C54,98 74,73 74,60 C74,49 65,40 54,40 Z" />
+    <path
+        android:fillColor="#0B2545"
+        android:pathData="M54,36 C42,36 32,46 32,58 C32,72 54,96 54,96 C54,96 76,72 76,58 C76,46 66,36 54,36 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,20 C43,20 34,29 34,40.5 C34,55.6 54,86 54,86 C54,86 74,55.6 74,40.5 C74,29 65,20 54,20 Z" />
-
-    <!-- Location Dot / Core Cutout inside the pin (Teal / Secondary color representation) -->
+        android:pathData="M54,47 C48,47 43,52 43,58 C43,64 48,69 54,69 C60,69 65,64 65,58 C65,52 60,47 54,47 Z" />
     <path
-        android:fillColor="#0D9488"
-        android:pathData="M54,32 C58.4,32 62,35.6 62,40 C62,44.4 58.4,48 54,48 C49.6,48 46,44.4 46,40 C46,35.6 49.6,32 54,32 Z" />
-
-    <!-- A small elegant navigation arrow shape inside the dot -->
-    <path
-        android:fillColor="#2DD4BF"
-        android:pathData="M54,36 L57,43 L54,41.5 L51,43 Z" />
+        android:fillColor="#FF6B00"
+        android:pathData="M54,51 C50,51 47,54 47,58 C47,62 50,65 54,65 C58,65 61,62 61,58 C61,54 58,51 54,51 Z" />
 
 </vector>
