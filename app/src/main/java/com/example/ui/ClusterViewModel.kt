@@ -13,10 +13,13 @@ import com.example.BuildConfig
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -378,6 +381,300 @@ class ClusterViewModel(private val repository: ClusterRepository) : ViewModel() 
             importClustersFromJson(decodedJson, onResult)
         } catch (e: Exception) {
             onResult(false, 0, "Failed to decode locations.laka data: ${e.localizedMessage}")
+        }
+    }
+
+    fun syncDataFromCloud(
+        scriptUrl: String,
+        onResult: (Boolean, Int, String) -> Unit
+    ) {
+        val urlToUse = scriptUrl.trim()
+        if (urlToUse.isEmpty()) {
+            onResult(false, 0, "Please enter a valid Google Apps Script Web App URL")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
+                val request = okhttp3.Request.Builder()
+                    .url(urlToUse)
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val respStr = response.body?.string() ?: ""
+
+                if (!response.isSuccessful && response.code != 302) {
+                    withContext(Dispatchers.Main) {
+                        onResult(false, 0, "Sync GET response code ${response.code}: $respStr")
+                    }
+                    return@launch
+                }
+
+                // Flexibly parse response: top-level JSONArray, or JSONObject containing array in any key
+                val jsonArray = try {
+                    val trimmed = respStr.trim()
+                    if (trimmed.startsWith("[")) {
+                        org.json.JSONArray(trimmed)
+                    } else if (trimmed.startsWith("{")) {
+                        val obj = org.json.JSONObject(trimmed)
+                        var arr: org.json.JSONArray? = null
+                        val keysToTry = listOf("clusters", "data", "items", "records", "result", "rows", "values", "sheet", "list", "content")
+                        for (k in keysToTry) {
+                            if (obj.has(k) && !obj.isNull(k)) {
+                                arr = obj.optJSONArray(k)
+                                if (arr != null) break
+                            }
+                        }
+                        if (arr == null) {
+                            val iterator = obj.keys()
+                            while (iterator.hasNext()) {
+                                val key = iterator.next()
+                                val candidate = obj.optJSONArray(key)
+                                if (candidate != null) {
+                                    arr = candidate
+                                    break
+                                }
+                            }
+                        }
+                        arr ?: org.json.JSONArray()
+                    } else {
+                        org.json.JSONArray()
+                    }
+                } catch (e: Exception) {
+                    org.json.JSONArray()
+                }
+
+                var importedCount = 0
+                var updatedCount = 0
+
+                for (i in 0 until jsonArray.length()) {
+                    var code = ""
+                    var lat = 0.0
+                    var lng = 0.0
+                    var updated = System.currentTimeMillis()
+
+                    val itemObj = jsonArray.optJSONObject(i)
+                    if (itemObj != null) {
+                        // Flexible code extraction
+                        val codeKeys = listOf("clusterCode", "cluster_code", "code", "ClusterCode", "Cluster Code", "Cluster_Code", "Code", "CLUSTER_CODE", "Cluster", "cluster")
+                        for (k in codeKeys) {
+                            if (itemObj.has(k) && !itemObj.isNull(k)) {
+                                val s = itemObj.optString(k, "").trim()
+                                if (s.isNotEmpty()) {
+                                    code = s.uppercase()
+                                    break
+                                }
+                            }
+                        }
+
+                        // Flexible latitude extraction
+                        val latKeys = listOf("latitude", "lat", "Latitude", "LATITUDE", "Lat", "LAT")
+                        for (k in latKeys) {
+                            if (itemObj.has(k) && !itemObj.isNull(k)) {
+                                val raw = itemObj.opt(k)
+                                val parsed = raw?.toString()?.trim()?.toDoubleOrNull()
+                                if (parsed != null && parsed != 0.0) {
+                                    lat = parsed
+                                    break
+                                }
+                            }
+                        }
+
+                        // Flexible longitude extraction
+                        val lngKeys = listOf("longitude", "lng", "long", "Longitude", "LONGITUDE", "Lng", "Long", "LNG")
+                        for (k in lngKeys) {
+                            if (itemObj.has(k) && !itemObj.isNull(k)) {
+                                val raw = itemObj.opt(k)
+                                val parsed = raw?.toString()?.trim()?.toDoubleOrNull()
+                                if (parsed != null && parsed != 0.0) {
+                                    lng = parsed
+                                    break
+                                }
+                            }
+                        }
+
+                        // Updated timestamp extraction
+                        if (itemObj.has("updatedAt") && !itemObj.isNull("updatedAt")) {
+                            val ts = itemObj.optLong("updatedAt", 0L)
+                            if (ts > 0) updated = ts
+                        }
+                    } else {
+                        val itemArr = jsonArray.optJSONArray(i)
+                        if (itemArr != null && itemArr.length() >= 3) {
+                            val cStr = itemArr.optString(0, "").trim()
+                            if (cStr.isNotEmpty() && !cStr.equals("clusterCode", ignoreCase = true) && !cStr.equals("code", ignoreCase = true)) {
+                                code = cStr.uppercase()
+                                lat = itemArr.optString(1, "").toDoubleOrNull() ?: itemArr.optDouble(1, 0.0)
+                                lng = itemArr.optString(2, "").toDoubleOrNull() ?: itemArr.optDouble(2, 0.0)
+                            }
+                        }
+                    }
+
+                    if (code.isNotEmpty() && lat in -90.0..90.0 && lng in -180.0..180.0 && (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001)) {
+                        val existing = repository.getClusterByCode(code)
+                        val cluster = Cluster(
+                            clusterCode = code,
+                            latitude = lat,
+                            longitude = lng,
+                            updatedAt = if (existing != null && updated <= existing.updatedAt) existing.updatedAt else updated,
+                            isSynced = true
+                        )
+                        repository.insert(cluster)
+                        if (existing != null) {
+                            updatedCount++
+                        } else {
+                            importedCount++
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    val total = importedCount + updatedCount
+                    if (total > 0) {
+                        onResult(true, total, "Successfully synced $total clusters from cloud! ($importedCount new, $updatedCount updated)")
+                    } else if (jsonArray.length() == 0) {
+                        onResult(true, 0, "Connected to Google Sheet! (0 records received)")
+                    } else {
+                        onResult(true, 0, "Cloud sync complete. All local records are up to date.")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, 0, "Network / Sync error: ${e.localizedMessage ?: "Connection failed"}")
+                }
+            }
+        }
+    }
+
+    fun twoWaySyncCloud(
+        scriptUrl: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val urlToUse = scriptUrl.trim()
+        if (urlToUse.isEmpty()) {
+            onResult(false, "Please enter a valid Google Apps Script Web App URL")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Step 1: GET from Cloud
+            syncDataFromCloud(urlToUse) { getSuccess, getCount, getMsg ->
+                if (!getSuccess && !getMsg.contains("Connected to Google Sheet")) {
+                    onResult(false, "Cloud Download failed: $getMsg")
+                    return@syncDataFromCloud
+                }
+                // Step 2: POST to Cloud with consolidated local data
+                syncDataToCloud(urlToUse) { postSuccess, postMsg ->
+                    if (postSuccess) {
+                        onResult(true, "Two-Way Sync Complete! Downloaded $getCount items & uploaded all clusters to Google Sheet.")
+                    } else {
+                        onResult(false, "Downloaded $getCount items, but Upload failed: $postMsg")
+                    }
+                }
+            }
+        }
+    }
+
+    fun syncDataToCloud(
+        scriptUrl: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val urlToUse = scriptUrl.trim()
+        if (urlToUse.isEmpty()) {
+            onResult(false, "Please enter a valid Google Apps Script Web App URL")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val allList = try {
+                    repository.allClusters.first()
+                } catch (e: Exception) {
+                    clustersState.value
+                }
+
+                val list = allList.filter { !it.isSynced }
+
+                if (list.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        onResult(true, "All local records are already synced with Google Sheet!")
+                    }
+                    return@launch
+                }
+
+                val client = okhttp3.OkHttpClient.Builder()
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
+                val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+
+                var successCount = 0
+                var failCount = 0
+
+                // Loop through each cluster and upload current item's data
+                for (cluster in list) {
+                    val payload = org.json.JSONObject()
+                    // Exact keys expected by Google Apps Script (case-sensitive)
+                    payload.put("clusterCode", cluster.clusterCode)
+                    payload.put("latitude", cluster.latitude)
+                    payload.put("longitude", cluster.longitude)
+
+                    val jsonArray = org.json.JSONArray()
+                    val jsonObj = org.json.JSONObject()
+                    jsonObj.put("clusterCode", cluster.clusterCode)
+                    jsonObj.put("latitude", cluster.latitude)
+                    jsonObj.put("longitude", cluster.longitude)
+                    jsonObj.put("timestamp", sdf.format(java.util.Date(cluster.updatedAt)))
+                    jsonArray.put(jsonObj)
+
+                    payload.put("clusters", jsonArray)
+                    payload.put("data", jsonArray)
+
+                    val body = okhttp3.RequestBody.create(mediaType, payload.toString())
+                    val request = okhttp3.Request.Builder()
+                        .url(urlToUse)
+                        .post(body)
+                        .build()
+
+                    try {
+                        val response = client.newCall(request).execute()
+                        val respStr = response.body?.string() ?: ""
+                        if (response.isSuccessful || response.code == 302 || respStr.contains("success", ignoreCase = true)) {
+                            successCount++
+                            // Mark item as synced in local database
+                            repository.insert(cluster.copy(isSynced = true))
+                        } else {
+                            failCount++
+                        }
+                    } catch (e: Exception) {
+                        failCount++
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (successCount > 0) {
+                        onResult(true, "Successfully uploaded $successCount cluster(s) to Google Sheet!")
+                    } else {
+                        onResult(false, "Failed to upload clusters to Google Sheet ($failCount failed).")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Connection error: ${e.localizedMessage ?: "Network failed"}")
+                }
+            }
         }
     }
 

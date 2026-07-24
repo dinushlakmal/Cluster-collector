@@ -187,6 +187,181 @@ private val MidnightNeonDarkColorScheme = darkColorScheme(
     onSurfaceVariant = Color(0xFFECA3C2)
 )
 
+// Ocean Blue Schemes
+private val OceanBlueLightColorScheme = lightColorScheme(
+    primary = OceanBluePrimaryLight,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE0F2FE),
+    onPrimaryContainer = Color(0xFF0369A1),
+    secondary = OceanBlueSecondaryLight,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFCFFAFE),
+    onSecondaryContainer = Color(0xFF155E75),
+    background = Color(0xFFF0F9FF),
+    surface = Color.White,
+    onBackground = Color(0xFF0C4A6E),
+    onSurface = Color(0xFF0C4A6E),
+    surfaceVariant = Color(0xFFE0F2FE),
+    onSurfaceVariant = Color(0xFF0369A1)
+)
+
+private val OceanBlueDarkColorScheme = darkColorScheme(
+    primary = OceanBluePrimaryDark,
+    onPrimary = Color(0xFF0C4A6E),
+    primaryContainer = Color(0xFF0369A1),
+    onPrimaryContainer = Color(0xFFE0F2FE),
+    secondary = OceanBlueSecondaryDark,
+    onSecondary = Color(0xFF155E75),
+    secondaryContainer = Color(0xFF0891B2),
+    onSecondaryContainer = Color(0xFFCFFAFE),
+    background = Color(0xFF031420),
+    surface = Color(0xFF082235),
+    onBackground = Color(0xFFE0F2FE),
+    onSurface = Color(0xFFE0F2FE),
+    surfaceVariant = Color(0xFF0F3854),
+    onSurfaceVariant = Color(0xFF7DD3FC)
+)
+
+// Amber Gold Schemes
+private val AmberGoldLightColorScheme = lightColorScheme(
+    primary = AmberGoldPrimaryLight,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFFEF3C7),
+    onPrimaryContainer = Color(0xFF78350F),
+    secondary = AmberGoldSecondaryLight,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFEDD5),
+    onSecondaryContainer = Color(0xFF9A3412),
+    background = Color(0xFFFFFBEB),
+    surface = Color.White,
+    onBackground = Color(0xFF451A03),
+    onSurface = Color(0xFF451A03),
+    surfaceVariant = Color(0xFFFEF3C7),
+    onSurfaceVariant = Color(0xFF92400E)
+)
+
+private val AmberGoldDarkColorScheme = darkColorScheme(
+    primary = AmberGoldPrimaryDark,
+    onPrimary = Color(0xFF451A03),
+    primaryContainer = Color(0xFF78350F),
+    onPrimaryContainer = Color(0xFFFEF3C7),
+    secondary = AmberGoldSecondaryDark,
+    onSecondary = Color(0xFF451A03),
+    secondaryContainer = Color(0xFF9A3412),
+    onSecondaryContainer = Color(0xFFFFEDD5),
+    background = Color(0xFF1C1004),
+    surface = Color(0xFF2C1C0A),
+    onBackground = Color(0xFFFEF3C7),
+    onSurface = Color(0xFFFEF3C7),
+    surfaceVariant = Color(0xFF422812),
+    onSurfaceVariant = Color(0xFFFDE68A)
+)
+
+// Cherry Blossom Schemes
+private val CherryBlossomLightColorScheme = lightColorScheme(
+    primary = CherryBlossomPrimaryLight,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFFFE4E6),
+    onPrimaryContainer = Color(0xFF881337),
+    secondary = CherryBlossomSecondaryLight,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFCE7F3),
+    onSecondaryContainer = Color(0xFF831843),
+    background = Color(0xFFFFF1F2),
+    surface = Color.White,
+    onBackground = Color(0xFF4C0519),
+    onSurface = Color(0xFF4C0519),
+    surfaceVariant = Color(0xFFFFE4E6),
+    onSurfaceVariant = Color(0xFF9F1239)
+)
+
+private val CherryBlossomDarkColorScheme = darkColorScheme(
+    primary = CherryBlossomPrimaryDark,
+    onPrimary = Color(0xFF4C0519),
+    primaryContainer = Color(0xFF881337),
+    onPrimaryContainer = Color(0xFFFFE4E6),
+    secondary = CherryBlossomSecondaryDark,
+    onSecondary = Color(0xFF500724),
+    secondaryContainer = Color(0xFF831843),
+    onSecondaryContainer = Color(0xFFFCE7F3),
+    background = Color(0xFF1F040A),
+    surface = Color(0xFF2E0A13),
+    onBackground = Color(0xFFFFE4E6),
+    onSurface = Color(0xFFFFE4E6),
+    surfaceVariant = Color(0xFF481220),
+    onSurfaceVariant = Color(0xFFFECDD3)
+)
+
+// Cyber Matrix Schemes
+private val CyberMatrixLightColorScheme = lightColorScheme(
+    primary = CyberMatrixPrimaryLight,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDCFCE7),
+    onPrimaryContainer = Color(0xFF14532D),
+    secondary = CyberMatrixSecondaryLight,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFD1FAE5),
+    onSecondaryContainer = Color(0xFF065F46),
+    background = Color(0xFFF0FDF4),
+    surface = Color.White,
+    onBackground = Color(0xFF052E16),
+    onSurface = Color(0xFF052E16),
+    surfaceVariant = Color(0xFFDCFCE7),
+    onSurfaceVariant = Color(0xFF166534)
+)
+
+private val CyberMatrixDarkColorScheme = darkColorScheme(
+    primary = CyberMatrixPrimaryDark,
+    onPrimary = Color(0xFF052E16),
+    primaryContainer = Color(0xFF14532D),
+    onPrimaryContainer = Color(0xFFDCFCE7),
+    secondary = CyberMatrixSecondaryDark,
+    onSecondary = Color(0xFF022C22),
+    secondaryContainer = Color(0xFF065F46),
+    onSecondaryContainer = Color(0xFFD1FAE5),
+    background = Color(0xFF02140A),
+    surface = Color(0xFF082615),
+    onBackground = Color(0xFFDCFCE7),
+    onSurface = Color(0xFFDCFCE7),
+    surfaceVariant = Color(0xFF0F3B22),
+    onSurfaceVariant = Color(0xFF86EFAC)
+)
+
+// Nebula Indigo Schemes
+private val NebulaIndigoLightColorScheme = lightColorScheme(
+    primary = NebulaIndigoPrimaryLight,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE0E7FF),
+    onPrimaryContainer = Color(0xFF312E81),
+    secondary = NebulaIndigoSecondaryLight,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFEDE9FE),
+    onSecondaryContainer = Color(0xFF4C1D95),
+    background = Color(0xFFEEF2FF),
+    surface = Color.White,
+    onBackground = Color(0xFF1E1B4B),
+    onSurface = Color(0xFF1E1B4B),
+    surfaceVariant = Color(0xFFE0E7FF),
+    onSurfaceVariant = Color(0xFF3730A3)
+)
+
+private val NebulaIndigoDarkColorScheme = darkColorScheme(
+    primary = NebulaIndigoPrimaryDark,
+    onPrimary = Color(0xFF1E1B4B),
+    primaryContainer = Color(0xFF312E81),
+    onPrimaryContainer = Color(0xFFE0E7FF),
+    secondary = NebulaIndigoSecondaryDark,
+    onSecondary = Color(0xFF2E1065),
+    secondaryContainer = Color(0xFF4C1D95),
+    onSecondaryContainer = Color(0xFFEDE9FE),
+    background = Color(0xFF0B0A26),
+    surface = Color(0xFF151442),
+    onBackground = Color(0xFFE0E7FF),
+    onSurface = Color(0xFFE0E7FF),
+    surfaceVariant = Color(0xFF22205C),
+    onSurfaceVariant = Color(0xFFC7D2FE)
+)
+
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
@@ -199,8 +374,14 @@ fun MyApplicationTheme(
     "EMERALD_GREEN" -> if (darkTheme) EmeraldGreenDarkColorScheme else EmeraldGreenLightColorScheme
     "SUNSET_CRIMSON" -> if (darkTheme) SunsetCrimsonDarkColorScheme else SunsetCrimsonLightColorScheme
     "MIDNIGHT_NEON" -> if (darkTheme) MidnightNeonDarkColorScheme else MidnightNeonLightColorScheme
+    "OCEAN_BLUE" -> if (darkTheme) OceanBlueDarkColorScheme else OceanBlueLightColorScheme
+    "AMBER_GOLD" -> if (darkTheme) AmberGoldDarkColorScheme else AmberGoldLightColorScheme
+    "CHERRY_BLOSSOM" -> if (darkTheme) CherryBlossomDarkColorScheme else CherryBlossomLightColorScheme
+    "CYBER_MATRIX" -> if (darkTheme) CyberMatrixDarkColorScheme else CyberMatrixLightColorScheme
+    "NEBULA_INDIGO" -> if (darkTheme) NebulaIndigoDarkColorScheme else NebulaIndigoLightColorScheme
     else -> if (darkTheme) DarkColorScheme else LightColorScheme
   }
 
   MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
 }
+

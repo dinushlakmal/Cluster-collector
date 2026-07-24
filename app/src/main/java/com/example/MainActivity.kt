@@ -58,6 +58,10 @@ import android.graphics.ImageDecoder
 import android.provider.MediaStore
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.Image
@@ -108,28 +112,51 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val sharedPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
             var selectedThemeName by remember { mutableStateOf(sharedPrefs.getString("selected_theme", "DEFAULT_TEAL") ?: "DEFAULT_TEAL") }
+            var themeMode by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "SYSTEM") ?: "SYSTEM") }
             var selectedBackgroundStyle by remember { mutableStateOf(sharedPrefs.getString("background_style", "NONE") ?: "NONE") }
             var selectedBackgroundImageUri by remember { mutableStateOf(sharedPrefs.getString("background_image_uri", "") ?: "") }
+            var showSplashScreen by remember { mutableStateOf(true) }
 
-            MyApplicationTheme(themeName = selectedThemeName) {
-                ClusterAppScreen(
-                    viewModel = viewModel,
-                    selectedThemeName = selectedThemeName,
-                    onThemeChange = { newTheme ->
-                        selectedThemeName = newTheme
-                        sharedPrefs.edit().putString("selected_theme", newTheme).apply()
-                    },
-                    selectedBackgroundStyle = selectedBackgroundStyle,
-                    onBackgroundStyleChange = { newStyle ->
-                        selectedBackgroundStyle = newStyle
-                        sharedPrefs.edit().putString("background_style", newStyle).apply()
-                    },
-                    selectedBackgroundImageUri = selectedBackgroundImageUri,
-                    onBackgroundImageUriChange = { newUri ->
-                        selectedBackgroundImageUri = newUri
-                        sharedPrefs.edit().putString("background_image_uri", newUri).apply()
-                    }
-                )
+            val systemDark = isSystemInDarkTheme()
+            val useDarkTheme = when (themeMode) {
+                "DARK" -> true
+                "LIGHT" -> false
+                else -> systemDark
+            }
+
+            MyApplicationTheme(darkTheme = useDarkTheme, themeName = selectedThemeName) {
+                if (showSplashScreen) {
+                    MarvelIntroSplashScreen(
+                        viewModel = viewModel,
+                        userName = "DINUSH LAKMAL",
+                        appName = "CLUSTER COLLECTOR",
+                        onFinished = { showSplashScreen = false }
+                    )
+                } else {
+                    ClusterAppScreen(
+                        viewModel = viewModel,
+                        selectedThemeName = selectedThemeName,
+                        onThemeChange = { newTheme ->
+                            selectedThemeName = newTheme
+                            sharedPrefs.edit().putString("selected_theme", newTheme).apply()
+                        },
+                        themeMode = themeMode,
+                        onThemeModeChange = { newMode ->
+                            themeMode = newMode
+                            sharedPrefs.edit().putString("theme_mode", newMode).apply()
+                        },
+                        selectedBackgroundStyle = selectedBackgroundStyle,
+                        onBackgroundStyleChange = { newStyle ->
+                            selectedBackgroundStyle = newStyle
+                            sharedPrefs.edit().putString("background_style", newStyle).apply()
+                        },
+                        selectedBackgroundImageUri = selectedBackgroundImageUri,
+                        onBackgroundImageUriChange = { newUri ->
+                            selectedBackgroundImageUri = newUri
+                            sharedPrefs.edit().putString("background_image_uri", newUri).apply()
+                        }
+                    )
+                }
             }
         }
     }
@@ -248,6 +275,8 @@ fun ClusterAppScreen(
     viewModel: ClusterViewModel,
     selectedThemeName: String,
     onThemeChange: (String) -> Unit,
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
     selectedBackgroundStyle: String,
     onBackgroundStyleChange: (String) -> Unit,
     selectedBackgroundImageUri: String,
@@ -305,6 +334,34 @@ fun ClusterAppScreen(
     var showImportExportDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+
+    val sharedPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+
+    val defaultUrl = "https://script.google.com/macros/s/AKfycbwhEBLIjFL99Am87bFiAKaNbEZYwCGXuLOAfN3DXMppxtaKOlI0WVjY7YZLhpNyP6NQwQ/exec"
+    LaunchedEffect(Unit) {
+        val currentSaved = sharedPrefs.getString("script_url", "") ?: ""
+        if (!sharedPrefs.contains("script_url") || currentSaved.contains("AKfycbzv")) {
+            sharedPrefs.edit().putString("script_url", defaultUrl).apply()
+        }
+    }
+
+    // Auto 4:00 PM Daily Cloud Sync
+    LaunchedEffect(Unit) {
+        val scriptUrl = sharedPrefs.getString("script_url", defaultUrl) ?: defaultUrl
+        val calendar = java.util.Calendar.getInstance()
+        val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(calendar.time)
+        val lastAutoSyncDate = sharedPrefs.getString("last_auto_sync_date", "") ?: ""
+
+        if (currentHour >= 16 && lastAutoSyncDate != todayStr) {
+            viewModel.syncDataToCloud(scriptUrl) { success, msg ->
+                if (success) {
+                    sharedPrefs.edit().putString("last_auto_sync_date", todayStr).apply()
+                    Toast.makeText(context, "Auto 4:00 PM Cloud Sync Completed!\n$msg", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     // Dialog state variables
     var clusterCodeInput by remember { mutableStateOf("") }
@@ -402,26 +459,32 @@ fun ClusterAppScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = t("Cluster Collector", "ක්ලස්ටර් කලෙක්ටර්"),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = t("Field Location Coordinator", "ක්ෂේත්‍ර පිහිටීම් සම්බන්ධීකාරක"),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = t("Cluster Collector", "ක්ලස්ටර් කලෙක්ටර්"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = t("Field Location Coordinator", "ක්ෂේත්‍ර පිහිටීම් සම්බන්ධීකාරක"),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
+
                 actions = {
                     // Language Selector Globe Button
                     var showLanguageMenu by remember { mutableStateOf(false) }
@@ -475,14 +538,14 @@ fun ClusterAppScreen(
                         }
                     }
 
-                    // Export/Import Button
+                    // Cloud Sync Direct Action Button
                     IconButton(
                         onClick = { showImportExportDialog = true },
-                        modifier = Modifier.testTag("action_import_export")
+                        modifier = Modifier.testTag("action_cloud_sync")
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.ImportExport,
-                            contentDescription = "Import or Export Saved Clusters",
+                            imageVector = Icons.Rounded.CloudSync,
+                            contentDescription = t("Cloud Sync", "ක්ලවුඩ් Sync"),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
@@ -1606,6 +1669,7 @@ fun ClusterAppScreen(
             currentLanguage = currentLanguage,
             exportLakaLauncher = exportLakaLauncher,
             importLakaLauncher = importLakaLauncher,
+            viewModel = viewModel,
             onShareLaka = {
                 try {
                     val lakaData = viewModel.exportClustersToLaka()
@@ -1720,6 +1784,48 @@ fun ClusterAppScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
+                        text = t("App Mode (Dark / Light)", "තේමා මාදිලිය (අඳුරු / එළිය)"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            Triple("LIGHT", t("Light", "එළිය"), Icons.Rounded.LightMode),
+                            Triple("DARK", t("Dark", "අඳුරු"), Icons.Rounded.DarkMode),
+                            Triple("SYSTEM", t("System", "පද්ධති"), Icons.Rounded.SettingsSuggest)
+                        ).forEach { (modeKey, modeLabel, modeIcon) ->
+                            val isSelected = themeMode == modeKey
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { onThemeModeChange(modeKey) },
+                                label = { Text(modeLabel, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = modeIcon,
+                                        contentDescription = modeLabel,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
                         text = t("Select Color Theme", "වර්ණ තේමාව තෝරන්න"),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
@@ -1729,18 +1835,25 @@ fun ClusterAppScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     val themes = listOf(
-                        Triple("DEFAULT_TEAL", "Teal & Slate (Default)", "ටීල් සහ ස්ලේට් (පෙරනිමි)"),
-                        Triple("ROYAL_PURPLE", "Royal Amethyst", "රාජකීය දම්"),
-                        Triple("EMERALD_GREEN", "Emerald Mint", "කොළ සහ මින්ට්"),
-                        Triple("SUNSET_CRIMSON", "Sunset Amber", "රතු සහ රන්"),
-                        Triple("MIDNIGHT_NEON", "Cyberpunk Neon", "සයිබර්පන්ක් නියොන්")
+                        Triple("DEFAULT_TEAL", "Teal & Slate (Default)", "ටීල් සහ ස්ලේට් (පෙරනිමි)") to (Color(0xFF0D9488) to Color(0xFF0EA5E9)),
+                        Triple("ROYAL_PURPLE", "Royal Amethyst", "රාජකීය දම්") to (Color(0xFF7C3AED) to Color(0xFF4F46E5)),
+                        Triple("EMERALD_GREEN", "Emerald Mint", "කොළ සහ මින්ට්") to (Color(0xFF059669) to Color(0xFF0D9488)),
+                        Triple("SUNSET_CRIMSON", "Sunset Amber", "රතු සහ රන්") to (Color(0xFFDC2626) to Color(0xFFD97706)),
+                        Triple("MIDNIGHT_NEON", "Cyberpunk Neon", "සයිබර්පන්ක් නියොන්") to (Color(0xFFEC4899) to Color(0xFF06B6D4)),
+                        Triple("OCEAN_BLUE", "Ocean Blue & Cyan", "මුහුදු නිල් සහ සයන්") to (Color(0xFF0284C7) to Color(0xFF06B6D4)),
+                        Triple("AMBER_GOLD", "Amber & Gold", "ඇම්බර් සහ රන්") to (Color(0xFFD97706) to Color(0xFFB45309)),
+                        Triple("CHERRY_BLOSSOM", "Rose Cherry Blossom", "රෝස සහ චෙරි") to (Color(0xFFE11D48) to Color(0xFFDB2777)),
+                        Triple("CYBER_MATRIX", "Cyber Matrix Green", "සයිබර් මැට්‍රික්ස් කොළ") to (Color(0xFF15803D) to Color(0xFF059669)),
+                        Triple("NEBULA_INDIGO", "Nebula Indigo Violet", "නෙබියුලා ඉන්ඩිගෝ වයලට්") to (Color(0xFF4338CA) to Color(0xFF6D28D9))
                     )
 
-                    themes.forEach { (key, enName, siName) ->
+                    themes.forEach { (info, colors) ->
+                        val (key, enName, siName) = info
+                        val (c1, c2) = colors
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(if (selectedThemeName == key) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent)
                                 .clickable { onThemeChange(key) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -1750,12 +1863,30 @@ fun ClusterAppScreen(
                                 selected = selectedThemeName == key,
                                 onClick = { onThemeChange(key) }
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // Color Swatch Preview
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(c1)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = (-4).dp)
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(c2)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (currentLanguage == "si") siName else enName,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = if (selectedThemeName == key) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedThemeName == key) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                color = if (selectedThemeName == key) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -1887,7 +2018,7 @@ fun ClusterAppScreen(
                     )
 
                     Text(
-                        text = t("v1.0.2 - Premium Edition", "v1.0.2 - ප්‍රිමියම් සංස්කරණය"),
+                        text = t("v2.0 - Premium Edition", "v2.0 - ප්‍රිමියම් සංස්කරණය"),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
@@ -1940,13 +2071,6 @@ fun ClusterAppScreen(
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 textAlign = TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = t("Senior Mobile Engineer", "ජ්‍යෙෂ්ඨ ජංගම යෙදුම් ඉංජිනේරු"),
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-                                textAlign = TextAlign.Center
-                            )
                         }
                     }
 
@@ -1986,25 +2110,25 @@ fun ClusterCardItem(
                 onLongClick = onDeleteClick
             )
             .testTag("cluster_card_${cluster.clusterCode}"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(18.dp)
+            modifier = Modifier.padding(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(26.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
@@ -2013,13 +2137,13 @@ fun ClusterCardItem(
                                 imageVector = Icons.Rounded.Navigation,
                                 contentDescription = "Cluster Area Icon",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = cluster.clusterCode,
-                            fontSize = 20.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.testTag("cluster_title_${cluster.clusterCode}")
@@ -2027,38 +2151,38 @@ fun ClusterCardItem(
 
                         val subArea = remember(cluster.clusterCode) { extractSubArea(cluster.clusterCode) }
                         if (subArea.isNotBlank() && subArea != "OTHER") {
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(6.dp)
+                                shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
                                     text = subArea,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 4.dp)
+                        modifier = Modifier.padding(start = 2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.LocationOn,
                             contentDescription = "GPS Pin",
                             tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = "Lat: %.5f°  |  Lng: %.5f°".format(cluster.latitude, cluster.longitude),
-                            fontSize = 13.sp,
+                            text = "Lat: %.5f° | Lng: %.5f°".format(cluster.latitude, cluster.longitude),
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
                         )
@@ -2068,31 +2192,37 @@ fun ClusterCardItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onEditClick,
-                        modifier = Modifier.testTag("edit_button_${cluster.clusterCode}")
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("edit_button_${cluster.clusterCode}")
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Edit,
                             contentDescription = "Edit Cluster Code",
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
                     IconButton(
                         onClick = onDeleteClick,
-                        modifier = Modifier.testTag("delete_button_${cluster.clusterCode}")
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("delete_button_${cluster.clusterCode}")
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Delete,
                             contentDescription = "Remove Cluster",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 0.8.dp)
+            Spacer(modifier = Modifier.height(6.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2104,39 +2234,39 @@ fun ClusterCardItem(
                         imageVector = Icons.Rounded.AccessTime,
                         contentDescription = "Timestamp",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Text(
                         text = "Updated $dateString",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
 
                 Button(
                     onClick = onNavigateClick,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.primary
                     ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier
-                        .height(36.dp)
+                        .height(30.dp)
                         .testTag("navigate_button_${cluster.clusterCode}")
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.NearMe,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "NAVIGATE",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.5.sp
+                        fontSize = 11.sp,
+                        letterSpacing = 0.3.sp
                     )
                 }
             }
@@ -2341,7 +2471,7 @@ fun InteractiveMapScreen(
         }
     }
 
-    // Device location is strictly prioritized as the RADAR CENTER
+    // Device location or average cluster coordinates
     val centerLat = remember(userLocation, clusters) {
         userLocation?.first ?: if (clusters.isNotEmpty()) clusters.map { it.latitude }.average() else 7.8731
     }
@@ -2357,7 +2487,6 @@ fun InteractiveMapScreen(
             val maxLngDiff = clusters.maxOfOrNull { Math.abs(it.longitude - centerLng) } ?: 0.001
             val maxDiff = maxOf(maxLatDiff, maxLngDiff)
             if (maxDiff > 0.0001) {
-                // scale so that furthest cluster fits comfortably inside 180dp radius
                 (180f / maxDiff.toFloat())
             } else {
                 8000f
@@ -2365,14 +2494,23 @@ fun InteractiveMapScreen(
         }
     }
 
+    // Auto-center panOffset on selected cluster when selectedClusterOnMap changes
+    LaunchedEffect(selectedClusterOnMap) {
+        selectedClusterOnMap?.let { cluster ->
+            val offsetX = -(cluster.longitude - centerLng).toFloat() * baseScale * zoom
+            val offsetY = (cluster.latitude - centerLat).toFloat() * baseScale * zoom
+            panOffset = Offset(offsetX, offsetY)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+            .background(MaterialTheme.colorScheme.surface)
     ) {
+        // Tactical Radar Scope View
         val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
         val primaryColor = MaterialTheme.colorScheme.primary
-        val secondaryColor = MaterialTheme.colorScheme.secondary
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val canvasWidth = constraints.maxWidth.toFloat()
@@ -2385,7 +2523,7 @@ fun InteractiveMapScreen(
                     .fillMaxSize()
                     .pointerInput(clusters, zoom, panOffset) {
                         detectTapGestures { tapOffset ->
-                            val tapThresholdPx = 36f * density
+                            val tapThresholdPx = 48f * density
                             var foundCluster: Cluster? = null
                             var minDistance = Double.MAX_VALUE
 
@@ -2486,7 +2624,7 @@ fun InteractiveMapScreen(
                     strokeWidth = 1.5f
                 )
 
-                // E. Draw Network Mesh vector lines connecting Radar Center (User) to surrounding Clusters
+                // E. Network Mesh vector lines
                 clusters.forEach { cluster ->
                     val cx = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
                     val cy = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
@@ -2502,34 +2640,30 @@ fun InteractiveMapScreen(
                     }
                 }
 
-                // F. RADAR CENTER: Device Location (User)
+                // F. RADAR CENTER (User)
                 val userPulseRadius = 18f + (sweepAngle % 90f) * 0.2f
-                // Pulse Ring 1
                 drawCircle(
                     color = Color(0xFF3B82F6).copy(alpha = 0.25f),
                     radius = userPulseRadius * zoom,
                     center = Offset(radarX, radarY)
                 )
-                // Pulse Ring 2
                 drawCircle(
                     color = Color(0xFF2563EB).copy(alpha = 0.5f),
                     radius = 12f * zoom,
                     center = Offset(radarX, radarY)
                 )
-                // Core Blue Dot
                 drawCircle(
                     color = Color(0xFF1D4ED8),
                     radius = 8f * zoom,
                     center = Offset(radarX, radarY)
                 )
-                // White Center Spot
                 drawCircle(
                     color = Color.White,
                     radius = 3f * zoom,
                     center = Offset(radarX, radarY)
                 )
 
-                // G. Plot Surrounding Cluster Pins
+                // G. Surrounding Cluster Pins
                 clusters.forEach { cluster ->
                     val x = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
                     val y = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
@@ -2557,7 +2691,7 @@ fun InteractiveMapScreen(
                 }
             }
 
-            // Overlay Badge for Radar Center (User Location)
+            // Overlay Badge for Radar Center
             val userDpX = with(LocalDensity.current) { (centerX + panOffset.x).toDp() }
             val userDpY = with(LocalDensity.current) { (centerY + panOffset.y).toDp() }
 
@@ -2596,7 +2730,7 @@ fun InteractiveMapScreen(
                 }
             }
 
-            // Overlay Badges for Surrounding Clusters with distance from Radar Center
+            // Overlay Badges for Surrounding Clusters
             clusters.forEachIndexed { index, cluster ->
                 val x = centerX + (cluster.longitude - centerLng).toFloat() * baseScale * zoom + panOffset.x
                 val y = centerY - (cluster.latitude - centerLat).toFloat() * baseScale * zoom + panOffset.y
@@ -2626,6 +2760,7 @@ fun InteractiveMapScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Card(
+                            modifier = Modifier.clickable { onSelectedClusterOnMapChange(cluster) },
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                             ),
@@ -2645,12 +2780,77 @@ fun InteractiveMapScreen(
                     }
                 }
             }
+        }
 
-            // Floating Map Controls Dashboard
+        // Top Header Control Bar & Radar View Controls Dashboard
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Radar Scope Badge
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Radar,
+                            contentDescription = "Radar Scope",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Radar Scope",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                // Cluster Counter Badge
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PinDrop,
+                            contentDescription = "Clusters Count",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${clusters.size} Clusters",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            // Radar View Controls Dashboard
             Card(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp),
+                modifier = Modifier.align(Alignment.Start),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
                 ),
@@ -2658,30 +2858,30 @@ fun InteractiveMapScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(6.dp),
+                    modifier = Modifier.padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     IconButton(
                         onClick = { zoom = (zoom + 0.5f).coerceAtMost(8f) },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ZoomIn,
                             contentDescription = "Zoom In",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                     IconButton(
                         onClick = { zoom = (zoom - 0.5f).coerceAtLeast(0.4f) },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ZoomOut,
                             contentDescription = "Zoom Out",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                     IconButton(
@@ -2690,184 +2890,164 @@ fun InteractiveMapScreen(
                             panOffset = Offset.Zero
                             onSelectedClusterOnMapChange(null)
                         },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.FilterCenterFocus,
-                            contentDescription = "Center on My Location",
+                            contentDescription = "Center Radar",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                     IconButton(
                         onClick = {
                             syncUserLocation()
                             panOffset = Offset.Zero
-                            Toast.makeText(context, "Location synced to Radar Center / ලොකේෂනය රේඩාර් මැදට සමමුහුර්ත විය", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Location synced to Radar Center", Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.MyLocation,
                             contentDescription = "Sync GPS Location",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
+        }
 
-            // Radar HUD Status overlay top right
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
-                ),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+        // Selected Cluster Pin Details Card Overlay
+        AnimatedVisibility(
+            visible = selectedClusterOnMap != null,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            selectedClusterOnMap?.let { cluster ->
+                val distKm = userLocation?.let { calculateDistanceKm(it.first, it.second, cluster.latitude, cluster.longitude) }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Radar,
-                            contentDescription = "Radar Scope",
-                            tint = Color(0xFF1D4ED8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "RADAR CENTER",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1D4ED8)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        if (userLocation != null) "Lat: ${"%.4f".format(userLocation!!.first)}" else "GPS Searching...",
-                        fontSize = 8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        if (userLocation != null) "Lng: ${"%.4f".format(userLocation!!.second)}" else "Acquiring...",
-                        fontSize = 8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Selected Pin Details Card overlay bottom
-            AnimatedVisibility(
-                visible = selectedClusterOnMap != null,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                selectedClusterOnMap?.let { cluster ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.LocationSearching,
-                                            contentDescription = "Selected Pin",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Place,
+                                        contentDescription = "Selected Pin",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = cluster.clusterCode,
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        Text(
-                                            text = "Lat: %.5f° | Lng: %.5f°".format(cluster.latitude, cluster.longitude),
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        if (distKm != null) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = formatDistance(distKm),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
                                     }
-                                }
-
-                                IconButton(
-                                    onClick = { onSelectedClusterOnMapChange(null) }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Close Details",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Text(
+                                        text = "Loan Collection Cluster ${cluster.clusterCode}",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "Lat: %.5f° | Lng: %.5f°".format(cluster.latitude, cluster.longitude),
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.outline
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            IconButton(
+                                onClick = { onSelectedClusterOnMapChange(null) }
                             ) {
-                                OutlinedButton(
-                                    onClick = { onSelectCluster(cluster) },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.List,
-                                        contentDescription = "View in List",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("View in List", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Close Details",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
 
-                                Button(
-                                    onClick = {
-                                        viewModel.navigateToCluster(cluster, context)
-                                    },
-                                    modifier = Modifier
-                                        .weight(1.2f)
-                                        .height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.NearMe,
-                                        contentDescription = "Navigate",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Navigate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onSelectCluster(cluster) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.List,
+                                    contentDescription = "View in List",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("View in List", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.navigateToCluster(cluster, context)
+                                },
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Navigation,
+                                    contentDescription = "Navigate via Google Maps",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Navigate", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2883,9 +3063,16 @@ fun LakaImportExportDialog(
     currentLanguage: String,
     exportLakaLauncher: androidx.activity.result.ActivityResultLauncher<String>,
     importLakaLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+    viewModel: ClusterViewModel,
     onShareLaka: () -> Unit
 ) {
+    val context = LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    val defaultUrl = "https://script.google.com/macros/s/AKfycbwhEBLIjFL99Am87bFiAKaNbEZYwCGXuLOAfN3DXMppxtaKOlI0WVjY7YZLhpNyP6NQwQ/exec"
     val t = { en: String, si: String -> if (currentLanguage == "si") si else en }
+    var scriptUrlInput by remember { mutableStateOf(sharedPrefs.getString("script_url", defaultUrl) ?: defaultUrl) }
+    var showUrlInput by remember { mutableStateOf(false) }
+    var isSyncing by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -2909,86 +3096,138 @@ fun LakaImportExportDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ImportExport,
+                        imageVector = Icons.Rounded.CloudUpload,
                         contentDescription = "Sync icon",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = t("Backup & Restore Data", "දත්ත බැකප් සහ ප්‍රතිසාධනය"),
+                        text = t("Cloud Sync & Backup", "ක්ලවුඩ් Sync සහ බැකප්"),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                Text(
-                    text = t(
-                        "Export your coordinate collection to a '.laka' backup file, or restore data from an existing backup file.",
-                        "ඔබේ ඛණ්ඩාංක එකතුව '.laka' බැකප් ගොනුවකට අපනයනය කරන්න, නැතහොත් පවතින බැකප් ගොනුවකින් දත්ත ප්‍රතිසාධනය කරන්න."
-                    ),
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 18.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Export Button Card
+                // Google Apps Script Cloud Sync Card
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            exportLakaLauncher.launch("locations.laka")
-                        }
-                        .testTag("export_laka_card"),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                     ),
                     shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(14.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Rounded.Upload,
-                                contentDescription = "Export icon",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                imageVector = Icons.Rounded.CloudSync,
+                                contentDescription = "Google Apps Script",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = t("Export to .laka File", ".laka ගොනුවකට අපනයනය කරන්න"),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
+                                text = t("Sync to Google Drive / Sheet", "Google Sheets වෙත සෘජුවම යවන්න"),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            Text(
-                                text = t("Save current coordinate data safely", "පවතින සියලුම දත්ත සුරක්ෂිතව තබාගන්න"),
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = t("Target Account: dinushlakmal01@gmail.com", "ලැබෙන ගිණුම: dinushlakmal01@gmail.com"),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = t("Cloud Link Active ✓", "ක්ලවුඩ් සබැඳිය සක්‍රීයයි ✓"),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            TextButton(
+                                onClick = { showUrlInput = !showUrlInput },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text(
+                                    text = if (showUrlInput) t("Hide URL", "සඟවන්න") else t("Edit URL", "වෙනස් කරන්න"),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        if (showUrlInput) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = scriptUrlInput,
+                                onValueChange = { scriptUrlInput = it },
+                                label = { Text(t("Google Apps Script Web App URL", "Apps Script Web App URL එක"), fontSize = 11.sp) },
+                                placeholder = { Text("https://script.google.com/macros/s/.../exec", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Unified Single Cloud Sync Button
+                        Button(
+                            onClick = {
+                                isSyncing = true
+                                sharedPrefs.edit().putString("script_url", scriptUrlInput.trim()).apply()
+                                viewModel.twoWaySyncCloud(scriptUrlInput.trim()) { success, msg ->
+                                    isSyncing = false
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            enabled = !isSyncing && scriptUrlInput.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(t("Syncing Cloud Data...", "දත්ත Sync වෙමින් පවතී..."), fontSize = 12.sp)
+                            } else {
+                                Icon(imageVector = Icons.Rounded.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(t("Cloud Data Sync", "දත්ත Sync කරන්න"), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Share Button Card
                 Card(
@@ -3007,12 +3246,12 @@ fun LakaImportExportDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.tertiary),
                             contentAlignment = Alignment.Center
@@ -3020,27 +3259,28 @@ fun LakaImportExportDialog(
                             Icon(
                                 imageVector = Icons.Rounded.Share,
                                 contentDescription = "Share icon",
-                                tint = MaterialTheme.colorScheme.onTertiary
+                                tint = MaterialTheme.colorScheme.onTertiary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = t("Share .laka Backup File", ".laka ගොනුව Share කරන්න"),
+                                text = t("Share .laka File", ".laka ගොනුව Share කරන්න"),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = t("Directly share file to other applications", "මෙම ගොනුව සෘජුවම වෙනත් ඇප්ස් වෙත යොමු කරන්න"),
-                                fontSize = 11.sp,
+                                text = t("Send file via WhatsApp / Drive", "ගොනුව වෙනත් ඇප්ස් වලට යොමු කරන්න"),
+                                fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Import Button Card
                 Card(
@@ -3059,12 +3299,12 @@ fun LakaImportExportDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.secondary),
                             contentAlignment = Alignment.Center
@@ -3072,27 +3312,28 @@ fun LakaImportExportDialog(
                             Icon(
                                 imageVector = Icons.Rounded.Download,
                                 contentDescription = "Import icon",
-                                tint = MaterialTheme.colorScheme.onSecondary
+                                tint = MaterialTheme.colorScheme.onSecondary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = t("Import from .laka File", ".laka ගොනුවකින් ආනයනය කරන්න"),
+                                text = t("Import location.laka File", "location.laka ගොනුවෙන් ආනයනය කරන්න"),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                             Text(
-                                text = t("Restore coordinates from a backup file", "බැකප් ගොනුවකින් දත්ත නැවත ලබාගන්න"),
-                                fontSize = 11.sp,
+                                text = t("Restore coordinates into app", "බැකප් ගොනුවෙන් දත්ත නැවත ලබාගන්න"),
+                                fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 TextButton(
                     onClick = onDismiss,
@@ -3337,6 +3578,243 @@ fun SmartClusterCodeInput(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun MarvelIntroSplashScreen(
+    viewModel: ClusterViewModel,
+    userName: String = "DINUSH LAKMAL",
+    appName: String = "CLUSTER COLLECTOR",
+    onFinished: () -> Unit
+) {
+    val context = LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    val defaultUrl = "https://script.google.com/macros/s/AKfycbwhEBLIjFL99Am87bFiAKaNbEZYwCGXuLOAfN3DXMppxtaKOlI0WVjY7YZLhpNyP6NQwQ/exec"
+    val scriptUrl = sharedPrefs.getString("script_url", defaultUrl) ?: defaultUrl
+
+    var animState by remember { mutableStateOf(0) } // 0: Initial, 1: Zoom Box, 2: Final Lock
+    var isSyncing by remember { mutableStateOf(true) }
+    var syncMessage by remember { mutableStateOf("UPDATING APP DATA...") }
+
+    val scaleAnimate by animateFloatAsState(
+        targetValue = if (animState >= 1) 1f else 0.3f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "scale"
+    )
+
+    val alphaAnimate by animateFloatAsState(
+        targetValue = if (animState >= 1) 1f else 0f,
+        animationSpec = tween(500),
+        label = "alpha"
+    )
+
+    val shineOffset by animateFloatAsState(
+        targetValue = if (animState == 2) 1.2f else -0.2f,
+        animationSpec = tween(durationMillis = 1200, easing = LinearOutSlowInEasing),
+        label = "shine"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "flicker")
+    val flickerAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(120, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flickerAlpha"
+    )
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(150)
+        animState = 1
+        kotlinx.coroutines.delay(800)
+        animState = 2
+
+        // Perform auto two-way cloud sync during splash screen
+        viewModel.twoWaySyncCloud(scriptUrl) { success, msg ->
+            isSyncing = false
+            syncMessage = if (success) "APP DATA UPDATED ✓" else "SYNC COMPLETE"
+        }
+
+        // Wait for sync to finish or max 6s timeout so splash screen isn't stuck forever if offline
+        val startTime = System.currentTimeMillis()
+        while (isSyncing && (System.currentTimeMillis() - startTime < 6000)) {
+            kotlinx.coroutines.delay(200)
+        }
+
+        kotlinx.coroutines.delay(400)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0D0203))
+            .clickable { onFinished() },
+        contentAlignment = Alignment.Center
+    ) {
+        // Red Marvel background glow & comic grid lines
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            // Radial red aura
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFE50914).copy(alpha = 0.5f * flickerAlpha), Color(0xFF090102)),
+                    center = Offset(width / 2f, height / 2f),
+                    radius = width * 0.95f
+                )
+            )
+            // Comic grid background accents
+            val step = 36.dp.toPx()
+            var y = 0f
+            while (y < height) {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.04f),
+                    start = Offset(0f, y),
+                    end = Offset(width, y),
+                    strokeWidth = 1f
+                )
+                y += step
+            }
+        }
+
+        // Skip button
+        TextButton(
+            onClick = onFinished,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 40.dp, end = 20.dp)
+        ) {
+            Text("SKIP ▶", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+
+        // Marvel Box Animation
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .scale(scaleAnimate)
+                .graphicsLayer { alpha = alphaAnimate }
+                .padding(24.dp)
+        ) {
+            // "DINUSH LAKMAL PRESENTS" Top Banner
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Box(modifier = Modifier.height(2.dp).width(28.dp).background(Color(0xFFE50914)))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = userName.uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp,
+                    letterSpacing = 4.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(modifier = Modifier.height(2.dp).width(28.dp).background(Color(0xFFE50914)))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Solid Marvel Red Box Frame
+            Surface(
+                color = Color(0xFFE50914), // Marvel Red
+                shape = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(3.dp, Color.White),
+                shadowElevation = 16.dp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .drawBehind {
+                        if (shineOffset > -0.1f && shineOffset < 1.1f) {
+                            val shineX = size.width * shineOffset
+                            drawLine(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.65f), Color.Transparent),
+                                    startX = shineX - 40f,
+                                    endX = shineX + 40f
+                                ),
+                                start = Offset(shineX - 40f, 0f),
+                                end = Offset(shineX + 40f, size.height),
+                                strokeWidth = 35f
+                            )
+                        }
+                    }
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = appName.uppercase(),
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 26.sp,
+                        letterSpacing = 2.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "FIELD COORDINATE TRACKER",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 3.sp
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Updating App indicator underneath
+            Surface(
+                color = Color.Black.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE50914).copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color(0xFFE50914),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Column {
+                        Text(
+                            text = syncMessage,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        )
+                        Text(
+                            text = if (isSyncing) "ඇප් එක යාවත්කාලීන වෙමින් පවතී..." else "දත්ත යාවත්කාලීන විය",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
             }
         }
     }

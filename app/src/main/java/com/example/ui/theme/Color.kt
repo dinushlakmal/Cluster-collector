@@ -64,3 +64,33 @@ val MidnightNeonPrimaryDark = Color(0xFFF472B6)
 val MidnightNeonSecondaryLight = Color(0xFF06B6D4)
 val MidnightNeonSecondaryDark = Color(0xFF22D3EE)
 
+// Ocean Blue Theme
+val OceanBluePrimaryLight = Color(0xFF0284C7)
+val OceanBluePrimaryDark = Color(0xFF38BDF8)
+val OceanBlueSecondaryLight = Color(0xFF06B6D4)
+val OceanBlueSecondaryDark = Color(0xFF22D3EE)
+
+// Amber Gold Theme
+val AmberGoldPrimaryLight = Color(0xFFD97706)
+val AmberGoldPrimaryDark = Color(0xFFFBBF24)
+val AmberGoldSecondaryLight = Color(0xFFB45309)
+val AmberGoldSecondaryDark = Color(0xFFF59E0B)
+
+// Cherry Blossom Theme
+val CherryBlossomPrimaryLight = Color(0xFFE11D48)
+val CherryBlossomPrimaryDark = Color(0xFFFB7185)
+val CherryBlossomSecondaryLight = Color(0xFFDB2777)
+val CherryBlossomSecondaryDark = Color(0xFFF472B6)
+
+// Cyber Matrix Theme
+val CyberMatrixPrimaryLight = Color(0xFF15803D)
+val CyberMatrixPrimaryDark = Color(0xFF4ADE80)
+val CyberMatrixSecondaryLight = Color(0xFF059669)
+val CyberMatrixSecondaryDark = Color(0xFF34D399)
+
+// Nebula Indigo Theme
+val NebulaIndigoPrimaryLight = Color(0xFF4338CA)
+val NebulaIndigoPrimaryDark = Color(0xFF818CF8)
+val NebulaIndigoSecondaryLight = Color(0xFF6D28D9)
+val NebulaIndigoSecondaryDark = Color(0xFFA78BFA)
+

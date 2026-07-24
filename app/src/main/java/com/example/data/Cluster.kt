@@ -8,5 +8,6 @@ data class Cluster(
     @PrimaryKey val clusterCode: String,
     val latitude: Double,
     val longitude: Double,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isSynced: Boolean = false
 )
